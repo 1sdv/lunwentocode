@@ -1,12 +1,14 @@
 """
-BiyeToCode - 毕业论文代码生成系统
+BiyeToCode - 毕业论文代码生成系统 (Web版)
 
 将毕业论文Markdown或PDF转换为可运行的Python代码
 """
 import asyncio
-import argparse
 import os
 import sys
+import tempfile
+import shutil
+import gradio as gr
 
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,153 +19,181 @@ from app.config.settings import settings
 from app.utils.logger import logger
 
 
-def parse_args():
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(
-        description="BiyeToCode - 毕业论文代码生成系统",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-  # 使用Markdown或PDF文件
-  python main.py --md thesis.pdf
-  
-  # 使用Markdown和数据文件
-  python main.py --md thesis.md --data ./data
-  
-  # 指定输出目录
-  python main.py --md thesis.md --output ./my_output
-        """
-    )
+async def process_thesis(
+    md_file,
+    data_files,
+    api_key,
+    analyzer_model,
+    coder_model,
+    base_url
+):
+    """处理论文并生成代码"""
     
-    parser.add_argument(
-        "--md", "-m",
-        required=True,
-        help="论文文件路径（支持Markdown或PDF）"
-    )
+    if md_file is None:
+        return "❌ 请上传论文文件（Markdown或PDF）", None, ""
     
-    parser.add_argument(
-        "--data", "-d",
-        default=None,
-        help="数据文件目录（可选，包含Excel/CSV文件）"
-    )
+    # 使用传入的API Key或环境变量
+    final_api_key = api_key.strip() if api_key and api_key.strip() else settings.LLM_API_KEY
+    if not final_api_key:
+        return "❌ 请输入API Key或设置环境变量 LLM_API_KEY", None, ""
     
-    parser.add_argument(
-        "--output", "-o",
-        default="output",
-        help="输出目录（默认: output）"
-    )
+    # 模型配置
+    analyzer_model = analyzer_model.strip() if analyzer_model and analyzer_model.strip() else settings.ANALYZER_LLM_MODEL or "gpt-4o"
+    coder_model = coder_model.strip() if coder_model and coder_model.strip() else settings.CODER_LLM_MODEL or "gpt-4o"
+    final_base_url = base_url.strip() if base_url and base_url.strip() else settings.LLM_BASE_URL
     
-    parser.add_argument(
-        "--api-key",
-        default=None,
-        help="LLM API Key（也可通过环境变量LLM_API_KEY设置）"
-    )
-    
-    parser.add_argument(
-        "--model",
-        default=None,
-        help="LLM模型名称（默认: gpt-4o）"
-    )
-    
-    parser.add_argument(
-        "--base-url",
-        default=None,
-        help="LLM API Base URL（可选）"
-    )
-    
-    return parser.parse_args()
-
-
-async def main():
-    """主函数"""
-    args = parse_args()
-    
-    # 打印欢迎信息
-    print("""
-╔══════════════════════════════════════════════════════════════╗
-║                                                              ║
-║     🎓 BiyeToCode - 毕业论文代码生成系统 🎓                  ║
-║                                                              ║
-║     将毕业论文Markdown转换为可运行的Python代码                 ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝
-    """)
-    
-    # 配置检查 - 分析LLM
-    analyzer_api_key = settings.ANALYZER_LLM_API_KEY or settings.LLM_API_KEY or args.api_key
-    if not analyzer_api_key:
-        logger.error("请设置分析LLM API Key（环境变量 ANALYZER_LLM_API_KEY 或 LLM_API_KEY）")
-        sys.exit(1)
-    
-    # 配置检查 - 代码LLM
-    coder_api_key = settings.CODER_LLM_API_KEY or settings.LLM_API_KEY or args.api_key
-    if not coder_api_key:
-        logger.error("请设置代码LLM API Key（环境变量 CODER_LLM_API_KEY 或 LLM_API_KEY）")
-        sys.exit(1)
-    
-    # 检查输入文件
-    if not os.path.exists(args.md):
-        logger.error(f"论文文件不存在: {args.md}")
-        sys.exit(1)
-    
-    # 检查数据目录
-    if args.data and not os.path.exists(args.data):
-        logger.warning(f"数据目录不存在: {args.data}")
-        args.data = None
-    
-    # 创建分析LLM实例（用于论文分析）
-    analyzer_llm = LLM(
-        api_key=analyzer_api_key,
-        model=settings.ANALYZER_LLM_MODEL or settings.LLM_MODEL,
-        base_url=settings.ANALYZER_LLM_BASE_URL or settings.LLM_BASE_URL
-    )
-    logger.info(f"分析LLM: {analyzer_llm.model}")
-    
-    # 创建代码LLM实例（用于代码生成和修复）
-    coder_llm = LLM(
-        api_key=coder_api_key,
-        model=settings.CODER_LLM_MODEL or settings.LLM_MODEL,
-        base_url=settings.CODER_LLM_BASE_URL or settings.LLM_BASE_URL
-    )
-    logger.info(f"代码LLM: {coder_llm.model}")
-    
-    # 创建工作流（传入两个LLM）
-    workflow = ThesisToCodeWorkflow(analyzer_llm=analyzer_llm, coder_llm=coder_llm)
+    # 创建临时目录
+    temp_dir = tempfile.mkdtemp()
+    output_dir = os.path.join(temp_dir, "output")
+    data_dir = None
     
     try:
-        logger.info("开始处理...")
-        logger.info(f"论文文件: {args.md}")
-        if args.data:
-            logger.info(f"数据目录: {args.data}")
-        logger.info(f"输出目录: {args.output}")
+        # 处理数据文件
+        if data_files and len(data_files) > 0:
+            data_dir = os.path.join(temp_dir, "data")
+            os.makedirs(data_dir, exist_ok=True)
+            for data_file in data_files:
+                if data_file is not None:
+                    shutil.copy(data_file.name, os.path.join(data_dir, os.path.basename(data_file.name)))
+        
+        # 创建分析LLM实例
+        analyzer_llm = LLM(
+            api_key=final_api_key,
+            model=analyzer_model,
+            base_url=final_base_url
+        )
+        
+        # 创建代码LLM实例
+        coder_llm = LLM(
+            api_key=final_api_key,
+            model=coder_model,
+            base_url=final_base_url
+        )
+        
+        # 创建工作流
+        workflow = ThesisToCodeWorkflow(analyzer_llm=analyzer_llm, coder_llm=coder_llm)
         
         # 执行工作流
         result = await workflow.run(
-            md_path=args.md,
-            data_dir=args.data,
-            output_dir=args.output
+            md_path=md_file.name,
+            data_dir=data_dir,
+            output_dir=output_dir
         )
         
-        # 打印结果
-        print("\n" + "=" * 60)
-        print("✅ 代码生成完成!")
-        print("=" * 60)
-        print(f"\n📁 项目目录: {workflow.work_dir}")
-        print(f"📄 生成文件数: {len(result.files)}")
-        print(f"📦 依赖库数: {len(result.requirements)}")
-        print("\n生成的文件:")
-        for file_name in result.files.keys():
-            print(f"  - {file_name}")
+        # 收集生成的文件内容
+        output_text = "✅ 代码生成完成!\n\n"
+        output_text += f"📄 生成文件数: {len(result.files)}\n"
+        output_text += f"📦 依赖库数: {len(result.requirements)}\n\n"
+        output_text += "=" * 50 + "\n\n"
         
-        print(f"\n请查看 {workflow.work_dir}/README.md 了解详细信息")
-        print("=" * 60)
+        # 显示每个文件的内容
+        for file_name, content in result.files.items():
+            output_text += f"📄 {file_name}\n"
+            output_text += "-" * 40 + "\n"
+            output_text += content + "\n\n"
+        
+        # 打包输出目录为zip
+        zip_path = os.path.join(temp_dir, "generated_code")
+        shutil.make_archive(zip_path, 'zip', workflow.work_dir)
+        
+        # requirements
+        req_text = "\n".join(result.requirements) if result.requirements else "无额外依赖"
+        
+        return output_text, zip_path + ".zip", req_text
         
     except Exception as e:
-        logger.error(f"处理失败: {e}")
         import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        error_msg = f"❌ 处理失败: {str(e)}\n\n{traceback.format_exc()}"
+        return error_msg, None, ""
+
+
+def run_process(md_file, data_files, api_key, analyzer_model, coder_model, base_url):
+    """同步包装器"""
+    return asyncio.run(process_thesis(md_file, data_files, api_key, analyzer_model, coder_model, base_url))
+
+
+# 创建Gradio界面
+with gr.Blocks(title="BiyeToCode - 毕业论文代码生成系统", theme=gr.themes.Soft()) as demo:
+    gr.Markdown("""
+    # 🎓 BiyeToCode - 毕业论文代码生成系统
+    
+    将毕业论文（Markdown或PDF）转换为可运行的Python代码
+    """)
+    
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("### 📤 输入")
+            
+            md_input = gr.File(
+                label="上传论文文件",
+                file_types=[".md", ".pdf", ".txt"],
+                type="filepath"
+            )
+            
+            data_input = gr.File(
+                label="上传数据文件（可选，支持多个Excel/CSV）",
+                file_types=[".xlsx", ".xls", ".csv"],
+                file_count="multiple",
+                type="filepath"
+            )
+            
+            with gr.Accordion("⚙️ API配置", open=True):
+                api_key_input = gr.Textbox(
+                    label="API Key",
+                    placeholder="输入你的API Key（留空则使用环境变量）",
+                    type="password"
+                )
+                
+                base_url_input = gr.Textbox(
+                    label="API Base URL（可选）",
+                    placeholder="例如: https://api.openai.com/v1"
+                )
+                
+                analyzer_model_input = gr.Textbox(
+                    label="分析模型",
+                    placeholder="默认: gpt-4o",
+                    value=""
+                )
+                
+                coder_model_input = gr.Textbox(
+                    label="代码生成模型",
+                    placeholder="默认: gpt-4o",
+                    value=""
+                )
+            
+            submit_btn = gr.Button("🚀 开始生成", variant="primary", size="lg")
+        
+        with gr.Column(scale=2):
+            gr.Markdown("### 📥 输出")
+            
+            output_text = gr.Textbox(
+                label="生成结果",
+                lines=25,
+                max_lines=50,
+                show_copy_button=True
+            )
+            
+            with gr.Row():
+                download_file = gr.File(label="📦 下载完整代码包")
+                requirements_text = gr.Textbox(label="📋 依赖库", lines=5)
+    
+    # 绑定事件
+    submit_btn.click(
+        fn=run_process,
+        inputs=[md_input, data_input, api_key_input, analyzer_model_input, coder_model_input, base_url_input],
+        outputs=[output_text, download_file, requirements_text]
+    )
+    
+    gr.Markdown("""
+    ---
+    ### 📖 使用说明
+    1. 上传论文文件（支持 Markdown 或 PDF 格式）
+    2. 如有数据文件，可一并上传（Excel/CSV）
+    3. 填写 API Key（或预先设置环境变量）
+    4. 点击"开始生成"按钮
+    5. 等待处理完成后下载生成的代码包
+    """)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    demo.launch(server_name="0.0.0.0", server_port=7860)
