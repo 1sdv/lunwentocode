@@ -187,7 +187,8 @@ with gr.Blocks(title="BiyeToCode - 毕业论文代码生成系统", theme=gr.the
     gr.Markdown("""
     ---
     ### 📖 使用说明
-    1. 上传论文文件（支持 Markdown 或 PDF 格式）
+    1. 上传论文文件（pdf转为Maekdown文档使用[Mineru](https://mineru.net/)一键转化下载即可
+）
     2. 如有数据文件，可一并上传（Excel/CSV）
     3. 填写 API Key（或预先设置环境变量）
     4. 点击"开始生成"按钮
