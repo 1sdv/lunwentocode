@@ -117,7 +117,7 @@ with gr.Blocks(title="BiyeToCode - 毕业论文代码生成系统", theme=gr.the
     gr.Markdown("""
     # 🎓 LunwenToCode - 科研论文/毕业论文代码生成系统
     
-    将论文（Markdown格式）转换为可运行的Python代码([Mineru](https://mineru.net/)一键转化pdf为Markdown文件)
+    将论文（Markdown格式）转换为可运行的Python代码([Mineru](https://mineru.net/)一键转化pdf为Markdown文件)，代码生成过程可能较慢请耐心等待哦，坚持就是胜利呢
     """)
     
     with gr.Row():
