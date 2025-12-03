@@ -1,0 +1,22 @@
+# BiyeToCode 依赖
+
+# 核心依赖
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+openai>=1.0.0
+aiohttp>=3.8.0
+
+# 数据处理
+pandas>=2.0.0
+openpyxl>=3.0.0  # Excel支持
+xlrd>=2.0.0      # 旧版Excel支持
+
+# PDF解析
+PyMuPDF>=1.23.0  # 本地PDF解析备用方案
+
+# 日志
+icecream>=2.1.0
+
+# 可选：代码分析
+# pylint>=2.0.0
+# black>=23.0.0

@@ -1,25 +1,184 @@
----
-# 详细文档见https://modelscope.cn/docs/%E5%88%9B%E7%A9%BA%E9%97%B4%E5%8D%A1%E7%89%87
-domain: #领域：cv/nlp/audio/multi-modal/AutoML
-# - cv
-tags: #自定义标签
--
-datasets: #关联数据集
-  evaluation:
-  #- iic/ICDAR13_HCTR_Dataset
-  test:
-  #- iic/MTWI
-  train:
-  #- iic/SIBR
-models: #关联模型
-#- iic/ofa_ocr-recognition_general_base_zh
+# 🎓 LunwenToCode - 科研论文/毕业论文代码生成系统
 
-## 启动文件(若SDK为Gradio/Streamlit，默认为app.py, 若为Static HTML, 默认为index.html)
-# deployspec:
-#   entry_file: app.py
-license: Apache License 2.0
----
-#### Clone with HTTP
-```bash
- git clone https://www.modelscope.cn/studios/lcclxy/lunwentocode.git
+将论文Markdown自动转换为可运行的Python代码。
+
+## ✨ 功能特性
+
+- 📄 **文稿解析**: 直接读取Markdown论文文件
+- 🔍 **智能分析**: 自动识别论文类型、研究方法和代码需求
+- 💻 **代码生成**: 根据论文内容生成完整的Python代码
+- ✅ **自动验证**: 语法检查、导入验证和自动修复
+- 📊 **数据支持**: 支持额外Excel/CSV数据文件
+ 
+## 🏗️ 系统架构 
+
 ```
+┌─────────────────────────────────────────────────────────────┐
+│                    LunwenToCode 系统架构                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐               │
+│  │ Analyzer │ →  │ Coder    │ →  │Validator │               │
+│  │ Agent    │    │ Agent    │    │ Agent    │               │
+│  └──────────┘    └──────────┘    └──────────┘               │
+│       ↓               ↓               ↓                     │
+│  提取需求          生成代码        验证修复                   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 📦 安装
+
+### 1. 克隆项目
+
+```bash
+cd biyetocode
+```
+
+### 2. 安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 配置环境变量
+
+```bash
+cp .env.example .env
+# 编辑 .env 文件，填入API密钥
+```
+
+## 🚀 使用方法 
+
+### 基本使用
+
+pdf转为Maekdown文档使用[Mineru](https://mineru.net/)一键转化下载即可
+
+```bash
+# 使用Markdown或PDF文件
+python main.py --md thesis.md
+
+# 使用Markdown和数据文件
+python main.py --md thesis.md --data ./data
+
+# 指定输出目录
+python main.py --md thesis.md --output ./my_output
+```
+
+### 作为Python模块使用
+
+```python
+import asyncio
+from app.core.workflow import ThesisToCodeWorkflow
+from app.core.llm import LLM
+
+async def main():
+    # 创建LLM实例
+    llm = LLM(api_key="your-api-key")
+    
+    # 创建工作流
+    workflow = ThesisToCodeWorkflow(llm)
+    
+    # 执行
+    result = await workflow.run(
+        md_path="thesis.md",
+        data_dir="./data",  # 可选
+        output_dir="./output"
+    )
+    
+    print(f"生成文件: {list(result.files.keys())}")
+
+asyncio.run(main())
+```
+
+## 📁 项目结构
+
+```
+biyetocode/
+├── app/
+│   ├── agents/           # Agent实现
+│   │   ├── analyzer_agent.py    # 内容分析
+│   │   ├── coder_agent.py       # 代码生成
+│   │   └── validator_agent.py   # 代码验证
+│   ├── core/             # 核心模块
+│   │   ├── llm.py              # LLM封装
+│   │   ├── base_agent.py       # Agent基类
+│   │   └── workflow.py         # 工作流
+│   ├── schemas/          # 数据模型
+│   │   └── models.py
+│   ├── config/           # 配置
+│   │   └── settings.py
+│   └── utils/            # 工具函数
+│       ├── logger.py
+│       └── file_utils.py
+├── output/               # 输出目录
+├── main.py               # 主程序入口
+├── requirements.txt      # 依赖
+└── README.md
+```
+
+## 🔧 配置说明
+
+### 双LLM架构
+
+系统使用两个独立的LLM，每次调用独立无历史依赖：
+
+1. **分析LLM** - 用于论文内容分析（AnalyzerAgent）
+2. **代码LLM** - 用于代码生成和修复（CoderAgent、ValidatorAgent）
+
+### 环境变量配置
+
+```env
+# 分析LLM配置
+ANALYZER_LLM_API_KEY=your-api-key
+ANALYZER_LLM_MODEL=模型名称
+ANALYZER_LLM_BASE_URL=https://example/v1
+
+# 代码LLM配置
+CODER_LLM_API_KEY=your-api-key
+CODER_LLM_MODEL=模型名称
+CODER_LLM_BASE_URL=https://example/api/v1
+```
+
+支持OpenAI兼容的API
+
+## 📊 支持的论文类型
+
+- 实证研究 (Empirical)
+- 仿真研究 (Simulation)
+- 算法设计 (Algorithm)
+- 系统设计 (System Design)
+- 数据分析 (Data Analysis)
+- 机器学习 (Machine Learning)
+
+## 📝 输出说明
+
+生成的项目包含:
+
+```
+output/{task_id}/
+├── main.py                 # 主程序入口
+├── data_preprocessing.py   # 数据预处理
+├── data_analysis.py        # 数据分析
+├── visualization.py        # 可视化
+├── model_training.py       # 模型训练(如有)
+├── requirements.txt        # 依赖列表
+├── README.md               # 项目说明
+├── analysis_result.json    # 分析结果
+└── thesis.md               # 论文Markdown
+```
+
+## ⚠️ 注意事项
+
+1. **API费用**: 使用LLM API会产生费用，请注意用量
+2. **代码质量**: AI生成的代码可能需要人工调整
+3. **数据隐私**: 论文内容会发送到API，请注意隐私
+4. **依赖安装**: 生成的代码可能需要额外的Python库
+
+## 🤝 贡献
+
+欢迎提交Issue和Pull Request!
+
+## 📄 许可证
+
+MIT License
