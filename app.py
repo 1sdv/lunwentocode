@@ -1,7 +1,7 @@
 """
-BiyeToCode - 毕业论文代码生成系统 (Web版)
+lunwenToCode - 科研论文/毕业论文代码生成系统 (Web版)
 
-将毕业论文Markdown或PDF转换为可运行的Python代码
+将毕业论文Markdown转换为可运行的Python代码
 """
 import asyncio
 import os
@@ -115,9 +115,9 @@ def run_process(md_file, data_files, api_key, analyzer_model, coder_model, base_
 # 创建Gradio界面
 with gr.Blocks(title="BiyeToCode - 毕业论文代码生成系统", theme=gr.themes.Soft()) as demo:
     gr.Markdown("""
-    # 🎓 BiyeToCode - 毕业论文代码生成系统
+    # 🎓 LunwenToCode - 科研论文/毕业论文代码生成系统
     
-    将毕业论文（Markdown或PDF）转换为可运行的Python代码
+    将论文（Markdown格式）转换为可运行的Python代码([Mineru](https://mineru.net/)一键转化pdf为Markdown文件)
     """)
     
     with gr.Row():
@@ -182,13 +182,12 @@ with gr.Blocks(title="BiyeToCode - 毕业论文代码生成系统", theme=gr.the
         fn=run_process,
         inputs=[md_input, data_input, api_key_input, analyzer_model_input, coder_model_input, base_url_input],
         outputs=[output_text, download_file, requirements_text]
-    )
+    ) 
     
     gr.Markdown("""
-    ---
+    
     ### 📖 使用说明
-    1. 上传论文文件（pdf转为Maekdown文档使用[Mineru](https://mineru.net/)一键转化下载即可
-）
+    1. 上传论文文件（pdf转为Maekdown文档使用[Mineru](https://mineru.net/)一键转化下载即可）
     2. 如有数据文件，可一并上传（Excel/CSV）
     3. 填写 API Key（或预先设置环境变量）
     4. 点击"开始生成"按钮
