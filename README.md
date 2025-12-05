@@ -1,6 +1,6 @@
 # 🎓 LunwenToCode - 科研论文/毕业论文代码生成系统
 
-将论文Markdown自动转换为可运行的Python代码。
+将论文Markdown自动转换为可运行的Python代码，可以在这里快速体验：https://modelscope.cn/studios/lcclxy/lunwentocode
 
 ## ✨ 功能特性
 
