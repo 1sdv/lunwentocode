@@ -14,8 +14,6 @@
   <img src="https://img.shields.io/badge/UI-Gradio-F97316?style=for-the-badge&logo=gradio&logoColor=white" alt="Gradio"/>
 </p>
 
-[快速开始](#-快速开始) · [架构](#-架构) · [使用](#-使用方式) · [配置](#-配置) · [扩展](#-扩展与定制)
-
 </div>
 
 ---
@@ -31,6 +29,7 @@
 - ✅ **自检自愈**：语法 + 导入 + 静态分析三段验证 + LLM 自动修复（最多 5 次）
 - 📊 **数据友好**：自动识别 Excel / CSV，把 schema 注入生成上下文
 - 🌐 **双入口**：CLI 命令行 + Gradio Web 界面
+<img width="960" height="483" alt="幻灯片3" src="https://github.com/user-attachments/assets/75f15998-36a4-4309-bad2-2afd8c876b77" />
 
 ---
 
@@ -263,37 +262,11 @@ CODE_TIMEOUT=300
 ---
 
 ## 📦 输出示例
-
-```text
-output/20241217_143052_abc123/
-├── main.py                # 主程序入口
-├── data_preprocessing.py  # 数据预处理
-├── data_analysis.py       # 数据分析
-├── visualization.py       # 可视化
-├── model_training.py      # 模型训练（如有）
-├── requirements.txt       # 依赖列表
-├── README.md              # 项目说明
-├── analysis_result.json   # 分析结果
-└── thesis.md              # 原始论文
-```
+<img width="1536" height="749" alt="data" src="https://github.com/user-attachments/assets/f6c4d626-0229-4e24-a743-74c05c202d58" />
+<img width="795" height="630" alt="image" src="https://github.com/user-attachments/assets/0d2431de-c033-4933-be73-f377c5a32153" />
 
 ---
 
-## 🙋 FAQ
-
-**Q: 支持哪些 LLM？**
-A: 所有 **OpenAI 兼容的 API**——OpenAI、Azure OpenAI、书生 intern、Qwen、本地 Ollama 等。
-
-**Q: PDF 解析失败怎么办？**
-A: 系统会自动回退到 PyMuPDF 本地解析；也可先用 [Mineru](https://mineru.net/) 手动转 Markdown。
-
-**Q: 长论文会被截断吗？**
-A: 当前实现对 Markdown 做了 8K–15K 字符截断，超长论文建议先按章节拆分，或修改 `parser_agent.py` 中的截断长度。
-
-**Q: 生成的代码需要修改吗？**
-A: 可能需要根据实际数据路径与业务逻辑微调；用更强的代码 LLM（如 GPT-4o / Claude Sonnet）+ 清晰的论文描述能显著提升质量。
-
----
 
 <div align="center">
 
