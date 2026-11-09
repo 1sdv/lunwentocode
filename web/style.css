@@ -370,6 +370,57 @@ input::placeholder { color: #676956; }
 }
 .paper a { color: #7a5a1e; }
 
+/* ---- 滚动条 ----
+   浏览器默认滑块是纯白，在橄榄墨底和稿纸米上都扎眼。
+   深色区域用低透明度的纸色（读作暖灰），纸面区域用比底色略深的纸色（读作牛皮纸）。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(242, 237, 220, .22) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(242, 237, 220, .22);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(242, 237, 220, .36);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-corner { background: transparent; }
+
+/* 纸面（正文）：滑块融进纸里 */
+.paper {
+  scrollbar-color: rgba(193, 181, 144, .95) transparent;
+}
+.paper::-webkit-scrollbar-thumb {
+  background: rgba(193, 181, 144, .95);
+  background-clip: content-box;
+}
+.paper::-webkit-scrollbar-thumb:hover {
+  background: rgba(169, 156, 116, 1);
+  background-clip: content-box;
+}
+
+/* 横向滚动条（代码块、公式块）：细一点，同样走纸色 */
+.paper pre::-webkit-scrollbar,
+.paper .tex-raw::-webkit-scrollbar,
+.paper .katex-display::-webkit-scrollbar { height: 6px; }
+.paper pre::-webkit-scrollbar-thumb,
+.paper .tex-raw::-webkit-scrollbar-thumb {
+  background: rgba(193, 181, 144, .95);
+  background-clip: content-box;
+}
+.paper pre::-webkit-scrollbar-thumb:hover,
+.paper .tex-raw::-webkit-scrollbar-thumb:hover {
+  background: rgba(169, 156, 116, 1);
+  background-clip: content-box;
+}
+.paper pre,
+.paper .tex-raw { scrollbar-color: rgba(193, 181, 144, .95) transparent; }
+
 /* ---- LaTeX 公式 ---- */
 .paper .katex {
   font-size: 1.03em;
@@ -400,11 +451,6 @@ input::placeholder { color: #676956; }
 }
 .paper code.tex-raw {
   background: rgba(30, 36, 20, .09); padding: 1px 5px;
-}
-/* 公式块溢出时给出滚动条而不是撑破布局 */
-.paper .katex-display::-webkit-scrollbar { height: 5px; }
-.paper .katex-display::-webkit-scrollbar-thumb {
-  background: rgba(30, 36, 20, .22); border-radius: 3px;
 }
 
 /* 文件列表 */
