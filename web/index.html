@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LunwenToCode — 论文初稿生成</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <a class="wordmark" href="/">
+      <span class="wordmark-name">Lunwen<em>To</em>Code</span>
+      <span class="wordmark-tag">论文初稿生成</span>
+    </a>
+    <div class="masthead-right">
+      <span class="conn" id="conn"><i></i>未连接任务</span>
+      <a class="mastnav-link" href="/site/index.html">项目介绍</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap sheet">
+
+  <!-- ============ 提交 ============ -->
+  <section class="pane" id="pane-setup">
+    <div class="headline">
+      <p class="headline-kicker"><span class="k-rule"></span>研究方案 → 论文初稿与验证代码</p>
+      <h1>交出一份研究方案，拿回一篇有数据支撑的论文初稿</h1>
+      <p class="headline-lede">
+        代码在真实 Jupyter 内核中执行，论文里的每个数值都来自实际运行结果。
+        你的 API Key 只在本次任务的内存中使用，不写入服务器。
+      </p>
+    </div>
+
+    <div class="columns">
+      <!-- 主栏 -->
+      <div class="main-col">
+        <form class="form" id="form" autocomplete="off">
+
+          <div class="block">
+            <h2 class="block-title">研究方案</h2>
+            <p class="block-note">支持 .md / .pdf / .txt。PDF 建议先用 Mineru 转成 Markdown，解析质量更高。</p>
+
+            <div class="drop" id="drop-proposal" tabindex="0" role="button" aria-label="选择研究方案文件">
+              <input type="file" id="proposal" name="proposal" accept=".md,.markdown,.pdf,.txt" hidden>
+              <div class="drop-inner">
+                <span class="drop-label">选择文件，或把文件拖到这里</span>
+              </div>
+            </div>
+            <p class="chosen" id="picked-proposal" hidden></p>
+          </div>
+
+          <div class="block">
+            <h2 class="block-title">数据文件 <span class="mark-optional">可选</span></h2>
+            <p class="block-note">Excel 或 CSV，可以多选。生成的代码会直接读取这些文件。</p>
+
+            <div class="drop drop-quiet" id="drop-data" tabindex="0" role="button" aria-label="选择数据文件">
+              <input type="file" id="data_files" name="data_files" accept=".xlsx,.xls,.csv" multiple hidden>
+              <div class="drop-inner">
+                <span class="drop-label">选择数据文件</span>
+              </div>
+            </div>
+            <ul class="chosen-list" id="picked-data"></ul>
+          </div>
+
+          <details class="block block-fold" id="adv">
+            <summary>
+              <span class="fold-label">模型与接口</span>
+              <span class="fold-note">默认 gpt-4o，官方接口</span>
+            </summary>
+            <div class="fold-body">
+              <div class="row">
+                <div class="col">
+                  <label for="api_key">API Key <span class="mark-required">必填</span></label>
+                  <input type="password" id="api_key" name="api_key" placeholder="sk-..." autocomplete="off">
+                </div>
+                <div class="col">
+                  <label for="site_token">访问令牌 <span class="mark-optional">站点启用时需要</span></label>
+                  <input type="password" id="site_token" name="site_token" placeholder="X-Access-Token" autocomplete="off">
+                  <p class="field-note">存在本机浏览器，不会提交给模型服务商</p>
+                </div>
+              </div>
+              <div class="col">
+                <label for="base_url">Base URL <span class="mark-optional">可选</span></label>
+                <input type="text" id="base_url" name="base_url" placeholder="https://api.openai.com/v1">
+              </div>
+              <div class="row row-3">
+                <div class="col">
+                  <label for="analyzer_model">分析模型</label>
+                  <input type="text" id="analyzer_model" name="analyzer_model" placeholder="gpt-4o">
+                </div>
+                <div class="col">
+                  <label for="coder_model">代码模型</label>
+                  <input type="text" id="coder_model" name="coder_model" placeholder="gpt-4o">
+                </div>
+                <div class="col">
+                  <label for="writer_model">写作模型 <span class="mark-optional">留空同分析模型</span></label>
+                  <input type="text" id="writer_model" name="writer_model" placeholder="">
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div class="submit-row">
+            <button type="submit" class="go" id="submit">
+              <span class="go-label">开始生成</span>
+              <span class="go-note">通常需要数分钟</span>
+            </button>
+            <p class="form-error" id="form-error" hidden></p>
+          </div>
+        </form>
+
+        <!-- ===== 运行日志 ===== -->
+        <div class="log-block" id="log-block" hidden>
+          <div class="log-head">
+            <h2 class="block-title">执行记录</h2>
+            <div class="log-tools">
+              <span class="log-state" id="run-state">准备中</span>
+              <button class="text-btn" id="btn-copy-log" type="button">复制</button>
+            </div>
+          </div>
+          <div class="log" id="log"></div>
+        </div>
+
+        <!-- ===== 结果 ===== -->
+        <div class="result" id="result-panel" hidden>
+          <div class="result-head">
+            <div>
+              <h2 class="block-title">论文初稿</h2>
+              <p class="result-title" id="result-title"></p>
+            </div>
+            <button class="text-btn strong" id="btn-download" type="button">下载项目包</button>
+          </div>
+
+          <nav class="tabs">
+            <button class="tab active" data-tab="paper" type="button">正文</button>
+            <button class="tab" data-tab="files" type="button">文件</button>
+            <button class="tab" data-tab="meta" type="button">任务信息</button>
+          </nav>
+
+          <div class="tab-body" id="tab-paper"><article class="paper" id="paper"></article></div>
+          <div class="tab-body" id="tab-files" hidden><ul class="files" id="files"></ul></div>
+          <div class="tab-body" id="tab-meta" hidden><dl class="meta" id="meta"></dl></div>
+        </div>
+      </div>
+
+      <!-- 边栏 -->
+      <aside class="side-col">
+        <section class="side-block">
+          <h3 class="side-title">生成流程</h3>
+          <ol class="flow">
+            <li><b>方案解析</b><span>提取标题、章节结构与关键词</span></li>
+            <li><b>任务拆解</b><span>按章节组织 5 至 9 个代码支撑任务</span></li>
+            <li><b>真实执行</b><span>Jupyter 内核运行，出错自动重试</span></li>
+            <li><b>论文撰写</b><span>以第一作者口吻撰写各章节</span></li>
+          </ol>
+        </section>
+
+        <section class="side-block">
+          <h3 class="side-title">产出文件</h3>
+          <ul class="outs">
+            <li><code>paper.md</code><span>论文初稿正文</span></li>
+            <li><code>notebook.ipynb</code><span>可重跑的验证代码</span></li>
+            <li><code>*.png</code><span>实验图表</span></li>
+            <li><code>requirements.txt</code><span>依赖清单</span></li>
+          </ul>
+        </section>
+
+        <section class="side-block">
+          <h3 class="side-title">运行状态</h3>
+          <div class="meter">
+            <div class="meter-track"><div class="meter-fill" id="bar-fill"></div></div>
+            <span class="meter-num" id="bar-num">0%</span>
+          </div>
+          <p class="side-note" id="run-task-id">尚未提交任务</p>
+        </section>
+      </aside>
+    </div>
+
+    <button class="back" id="btn-back" type="button" hidden>新建一个任务</button>
+  </section>
+
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

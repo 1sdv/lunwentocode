@@ -52,9 +52,42 @@ python main.py --md proposal.pdf --data ./data --output ./output
 # 4. 或启动 Web
 python app.py
 # 浏览器打开 http://localhost:7860，实时查看执行进度
+
+# 5. 或启动公网版 Web 应用（FastAPI + 自研前端）
+pip install -r requirements-web.txt && pip install ipykernel
+python -m uvicorn server.main:app --host 127.0.0.1 --port 8000
+# 浏览器打开 http://127.0.0.1:8000
 ```
 
 > 💡 **PDF 准备小贴士**：可先用 [Mineru](https://mineru.net/) 把 PDF 转成 Markdown 再作为输入，解析质量更高。
+
+---
+
+## 🌐 公网部署
+
+Web 版（`server/` + `web/`）可部署到云服务器供多人使用。**一键脚本**：
+
+```bash
+# Docker（最省事）
+sudo bash deploy/deploy.sh --docker --token 你的访问令牌
+
+# systemd + Nginx + HTTPS（推荐用于正式环境）
+sudo bash deploy/deploy.sh --domain thesis.example.com --token 你的访问令牌
+```
+
+完整步骤、API 说明、自检清单与常见问题见 **[`deploy/DEPLOY.md`](deploy/DEPLOY.md)**。
+
+关键配置（`.env`）：
+
+| 变量 | 说明 |
+|------|------|
+| `SITE_TOKEN` | 访问令牌，用户需在页面填写才可提交任务。**公网部署必设** |
+| `MAX_CONCURRENT_TASKS` | 同时运行的任务数（每任务 = 1 个 Jupyter 内核 + 1 线程） |
+| `MAX_UPLOAD_MB` | 单文件上传上限，需与 Nginx `client_max_body_size` 匹配 |
+| `RATE_LIMIT_PER_MINUTE` | 每 IP 每分钟最大提交数，防刷 |
+| `TASK_TTL_HOURS` | 产出保留时长，超时自动清理 |
+
+> ⚠️ Jupyter 内核执行的是 LLM 生成的代码，本质是任意代码执行。请用低权限用户运行、设置 `SITE_TOKEN`、限制内存，并确保 `--workers 1`（任务管理器为进程内状态）。
 
 ---
 

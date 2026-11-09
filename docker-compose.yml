@@ -1,0 +1,29 @@
+services:
+  web:
+    build: .
+    image: lunwentocode/web:latest
+    container_name: lunwentocode-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      OUTPUT_ROOT: /app/web_output
+      UPLOAD_ROOT: /app/web_uploads
+      HOME: /root
+    volumes:
+      - ./web_output:/app/web_output
+      - ./web_uploads:/app/web_uploads
+      # Jupyter 内核规格目录需可写，否则内核启动失败
+      - ipython_kernels:/root/.ipython_kernels
+    # Jupyter 内核需要足够的共享内存
+    shm_size: "1gb"
+    deploy:
+      resources:
+        limits:
+          # 每个任务 = 1 个 Jupyter 内核 + 1 线程，内存按并发数估算
+          memory: 4G
+
+volumes:
+  ipython_kernels:

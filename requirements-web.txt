@@ -1,0 +1,4 @@
+# LunwenToCode Web 服务依赖（追加在基础依赖之后安装）
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9

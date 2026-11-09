@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LunwenToCode — 研究方案 → 论文初稿 + 验证代码</title>
+<meta name="description" content="LunwenToCode 是基于多 Agent 的论文初稿生成系统：输入研究方案，输出真实执行验证的论文正文与 Jupyter Notebook。">
+<style>
+:root {
+  /* 橄榄墨 · 苔褐 · 纸米 · 芥末金 · 砖红 */
+  --site-bg: #14170f;
+  --site-fg: #eee9d6;
+  --site-accent: #d9b44a;
+  --site-accent2: #b5533c;
+  --site-on-accent: #1a1d12;
+  --site-surface: #1c2016;
+  --site-muted: #a3a48a;
+  --site-border: #343a27;
+  --site-font: "Songti SC", "Source Han Serif SC", "Noto Serif SC", SimSun, Georgia, serif;
+  --site-radius: 4px;
+  --site-space: 1;
+  --site-type: 1;
+  --site-motion: 1;
+
+  --bg: var(--site-bg);
+  --fg: var(--site-fg);
+  --accent: var(--site-accent);
+  --on-accent: var(--site-on-accent);
+  --surface: var(--site-surface);
+  --muted: var(--site-muted);
+  --border: var(--site-border);
+  --radius: var(--site-radius);
+  --space: calc(24px * var(--site-space, 1));
+  --title-size: calc(46px * var(--site-type, 1));
+  --motion: calc(200ms * var(--site-motion, 1));
+
+  --paper: #f2eddc;
+  --paper-ink: #1e2414;
+  --paper-soft: #6b6b52;
+  --rule: #343a27;
+  --amber: #d9b44a;
+  --brick: #b5533c;
+
+  --serif: "Songti SC", "Source Han Serif SC", "Noto Serif SC", SimSun, Georgia, "Times New Roman", serif;
+  --sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, sans-serif;
+  --mono: Consolas, "Cascadia Code", "Courier New", monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--serif);
+  line-height: 1.75;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 顶灯光 */
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(720px 460px at 82% -6%, rgba(217, 180, 74, .17), transparent 62%),
+    radial-gradient(560px 420px at 4% 30%, rgba(181, 83, 60, .10), transparent 64%),
+    radial-gradient(900px 500px at 50% 112%, rgba(96, 106, 62, .18), transparent 62%);
+}
+/* 纸纤维颗粒 */
+body::after {
+  content: "";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.045'/%3E%3C/svg%3E");
+}
+
+.wrap { max-width: 1140px; margin: 0 auto; padding: 0 var(--space); }
+section { padding: calc(var(--space) * 2) 0; }
+
+a { color: inherit; }
+
+/* ---------- 刊头 ---------- */
+.masthead {
+  border-bottom: 1px solid var(--rule);
+  background: rgba(20, 23, 15, .84);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  position: sticky; top: 0; z-index: 40;
+}
+.masthead .wrap {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 20px; min-height: 64px; padding-top: 12px; padding-bottom: 12px;
+}
+.wordmark { display: flex; align-items: baseline; gap: 12px; }
+.wordmark .name {
+  font-size: 21px; font-weight: 700; letter-spacing: .6px;
+}
+.wordmark .name em { font-style: normal; color: var(--amber); }
+.wordmark .tag {
+  font-family: var(--sans); font-size: 12.5px; color: var(--muted); letter-spacing: .3px;
+}
+.mastnav { display: flex; gap: 22px; font-family: var(--sans); font-size: 14px; }
+.mastnav a {
+  color: var(--muted); text-decoration: none; padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: color var(--motion) ease, border-color var(--motion) ease;
+}
+.mastnav a:hover { color: var(--fg); border-bottom-color: var(--amber); }
+
+/* ---------- Hero ---------- */
+.hero {
+  padding: calc(var(--space) * 2.6) 0 calc(var(--space) * 2.2);
+  border-bottom: 1px solid var(--rule);
+}
+.hero-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .92fr);
+  gap: calc(var(--space) * 2.2); align-items: start;
+}
+.hero-eyebrow {
+  font-family: var(--sans); font-size: 13px; color: var(--amber);
+  letter-spacing: .4px; margin-bottom: 18px;
+  display: flex; align-items: center; gap: 10px;
+}
+.hero-eyebrow .rule { flex: none; width: 34px; height: 1px; background: var(--amber); opacity: .6; }
+h1 {
+  font-size: var(--title-size); line-height: 1.24; font-weight: 700;
+  letter-spacing: .5px; max-width: 15em;
+}
+.hero-lead {
+  margin-top: 20px; font-size: 17px; color: #c8c6a8;
+  max-width: 40em; line-height: 1.85;
+}
+.hero-lead b { color: var(--fg); font-weight: 400; box-shadow: inset 0 -.5em 0 rgba(217, 180, 74, .20); }
+
+/* 输入 → 产出 */
+.transit {
+  margin-top: 34px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center;
+  gap: 0 14px; font-family: var(--sans); font-size: 13.5px;
+}
+.transit .slot { padding: 14px 0; }
+.transit .slot b { display: block; font-family: var(--serif); font-size: 16px; font-weight: 700; }
+.transit .slot span { color: var(--muted); }
+.transit .link { height: 1px; background: var(--rule); position: relative; }
+.transit .link::after {
+  content: ""; position: absolute; right: 0; top: -2.5px;
+  border-left: 6px solid var(--amber); border-top: 3px solid transparent; border-bottom: 3px solid transparent;
+}
+
+.hero-links { margin-top: 26px; display: flex; gap: 26px; font-family: var(--sans); font-size: 14.5px; }
+.hero-links a {
+  color: var(--fg); text-decoration: none;
+  border-bottom: 1px solid var(--amber); padding-bottom: 3px;
+  transition: color var(--motion) ease, background var(--motion) ease;
+}
+.hero-links a:hover { color: var(--amber); }
+.hero-links a.quiet { color: var(--muted); border-bottom-color: var(--rule); }
+.hero-links a.quiet:hover { color: var(--fg); border-bottom-color: var(--muted); }
+
+/* ---------- 稿纸（Hero 的记忆点） ---------- */
+.sheet {
+  position: relative;
+  background: var(--paper);
+  color: var(--paper-ink);
+  padding: 40px 42px 36px;
+  transform: rotate(-.7deg);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .35) inset,
+    0 26px 60px -26px rgba(0, 0, 0, .85),
+    0 2px 8px rgba(0, 0, 0, .35);
+  animation: reveal 900ms cubic-bezier(.2, .7, .3, 1) both;
+}
+@keyframes reveal {
+  from { opacity: 0; transform: rotate(-.7deg) translateY(26px); }
+  to { opacity: 1; transform: rotate(-.7deg) translateY(0); }
+}
+.sheet::before {
+  content: ""; position: absolute; inset: 14px; border: 1px solid rgba(30, 36, 20, .14); pointer-events: none;
+}
+.sheet .running-head {
+  font-family: var(--sans); font-size: 11.5px; letter-spacing: 2.5px;
+  color: var(--paper-soft); text-transform: uppercase;
+  display: flex; justify-content: space-between;
+  padding-bottom: 10px; border-bottom: 1px solid rgba(30, 36, 20, .18);
+}
+.sheet-title {
+  margin-top: 22px; font-size: 25px; line-height: 1.35; font-weight: 700;
+  text-align: center; letter-spacing: .5px;
+}
+.sheet-byline {
+  margin-top: 10px; text-align: center; font-family: var(--sans);
+  font-size: 12.5px; color: var(--paper-soft);
+}
+.sheet-byline .sep { margin: 0 8px; opacity: .5; }
+.sheet-abstract {
+  margin-top: 24px; text-align: justify; font-size: 14.5px; line-height: 1.95;
+  color: #262c18;
+}
+.sheet-abstract .mark {
+  color: var(--brick); text-decoration: underline wavy rgba(181, 83, 60, .55);
+  text-underline-offset: 4px; padding: 0 1px;
+}
+.sheet-keywords {
+  margin-top: 18px; font-size: 13px; color: #333a20;
+  text-align: justify;
+}
+.sheet-keywords b {
+  font-family: var(--sans); font-weight: 500; font-size: 12.5px;
+  color: var(--paper-soft); margin-right: 6px;
+}
+.sheet-foot {
+  margin-top: 26px; padding-top: 12px; border-top: 1px solid rgba(30, 36, 20, .18);
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--sans); font-size: 11.5px; color: var(--paper-soft);
+}
+.seal {
+  position: absolute; right: 26px; bottom: 58px;
+  width: 74px; height: 74px; border: 2.5px solid var(--brick);
+  border-radius: 5px; color: var(--brick);
+  display: grid; place-items: center; text-align: center;
+  font-size: 17px; font-weight: 700; line-height: 1.25; letter-spacing: 1px;
+  transform: rotate(-11deg); opacity: .88;
+  box-shadow: inset 0 0 0 1.5px rgba(181, 83, 60, .45);
+}
+.seal small { display: block; font-size: 11px; font-weight: 400; letter-spacing: 2px; }
+
+/* ---------- 章节标题 ---------- */
+.section-head { margin-bottom: 34px; max-width: 46em; }
+.section-index {
+  font-family: var(--sans); font-size: 12.5px; color: var(--amber);
+  letter-spacing: 2px; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 12px;
+}
+.section-index .rule { flex: 1; height: 1px; background: var(--rule); }
+h2 { font-size: calc(30px * var(--site-type, 1)); font-weight: 700; letter-spacing: .6px; }
+.deck { margin-top: 14px; color: #bdbda0; font-size: 16px; line-height: 1.85; max-width: 44em; }
+
+/* ---------- 规模：排版式数据表 ---------- */
+.figures-table {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+}
+.figures-table > div { padding: 24px 22px 22px; border-left: 1px solid var(--rule); }
+.figures-table > div:first-child { border-left: none; padding-left: 0; }
+.figures-table dt {
+  font-size: 34px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1;
+  color: var(--amber);
+}
+.figures-table dd {
+  margin-top: 8px; font-family: var(--sans); font-size: 12.5px; color: var(--muted);
+  line-height: 1.6;
+}
+.figures-note {
+  margin-top: 20px; font-family: var(--sans); font-size: 13px; color: var(--muted);
+  max-width: 46em; line-height: 1.8;
+}
+
+/* ---------- 四个 Agent：编辑式列表 ---------- */
+.agents { list-style: none; display: grid; gap: 0; }
+.agents li {
+  display: grid; grid-template-columns: 68px minmax(0, 1fr);
+  gap: 22px; padding: 26px 0;
+  border-top: 1px solid var(--rule);
+  transition: background var(--motion) ease;
+}
+.agents li:last-child { border-bottom: 1px solid var(--rule); }
+.agents li:hover { background: rgba(217, 180, 74, .05); }
+.agents .no {
+  font-size: 30px; font-weight: 700; color: var(--amber);
+  line-height: 1; opacity: .9;
+}
+.agents h3 { font-size: 20px; font-weight: 700; letter-spacing: .4px; }
+.agents .agent-name {
+  font-family: var(--sans); font-size: 12.5px; color: var(--muted);
+  margin: 4px 0 10px; letter-spacing: .6px;
+}
+.agents p.body { color: #bdbda0; font-size: 15px; max-width: 44em; }
+
+/* ---------- 图表 ---------- */
+.plates { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 34px 30px; }
+.plate { margin: 0; }
+.plate .frame {
+  background: var(--paper); padding: 10px;
+  box-shadow: 0 16px 40px -24px rgba(0, 0, 0, .8);
+  transition: transform var(--motion) ease, box-shadow var(--motion) ease;
+}
+.plate:hover .frame { transform: translateY(-3px); box-shadow: 0 22px 48px -22px rgba(0, 0, 0, .9); }
+.plate img { width: 100%; display: block; }
+.plate figcaption {
+  margin-top: 14px; font-size: 14px; color: #b5b595; line-height: 1.75;
+  max-width: 32em;
+}
+.plate figcaption b {
+  display: block; font-weight: 700; color: var(--fg); font-size: 15px; margin-bottom: 3px;
+}
+.plate figcaption b i {
+  font-style: normal; font-family: var(--sans); font-size: 12px;
+  color: var(--amber); margin-right: 8px; letter-spacing: .5px;
+}
+
+/* ---------- 本地运行 ---------- */
+.runs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: calc(var(--space) * 2); align-items: start; }
+.runs ol { list-style: none; counter-reset: r; }
+.runs ol li {
+  counter-increment: r; display: grid; grid-template-columns: 34px 1fr;
+  gap: 14px; padding: 16px 0; border-top: 1px solid var(--rule);
+}
+.runs ol li:last-child { border-bottom: 1px solid var(--rule); }
+.runs ol li::before {
+  content: counter(r, cjk-ideographic);
+  font-size: 17px; color: var(--amber); line-height: 1.5;
+}
+.runs h3 { font-size: 16px; font-weight: 700; }
+.runs ol p { font-family: var(--sans); font-size: 13.5px; color: var(--muted); margin-top: 4px; line-height: 1.75; }
+.terminal {
+  background: #101309; border: 1px solid var(--rule); padding: 22px 24px;
+  font-family: var(--mono); font-size: 13px; line-height: 2;
+  overflow-x: auto; color: #d5d4b8;
+}
+.terminal .cmd { color: var(--amber); }
+.terminal .cmt { color: #75775c; }
+.terminal .ok { color: #8fb268; }
+
+/* ---------- 页脚 ---------- */
+footer {
+  border-top: 1px solid var(--rule); padding: 30px 0 40px;
+  font-family: var(--sans); font-size: 13px; color: var(--muted);
+}
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+footer .seal-note { color: #75775c; }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 960px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .sheet { transform: rotate(-.4deg); }
+  .runs { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  h1 { font-size: calc(31px * var(--site-type, 1)); }
+  .hero-lead { font-size: 15.5px; }
+  .mastnav { display: none; }
+  .sheet { padding: 30px 24px; }
+  .sheet-title { font-size: 21px; }
+  .seal { width: 60px; height: 60px; font-size: 14px; right: 16px; bottom: 44px; }
+  .transit { grid-template-columns: 1fr; }
+  .transit .link { display: none; }
+  .figures-table > div { border-left: none; padding-left: 0; border-top: 1px solid var(--rule); }
+  .figures-table > div:first-child { border-top: none; }
+  .agents li { grid-template-columns: 44px 1fr; gap: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="wordmark">
+      <span class="name">Lunwen<em>To</em>Code</span>
+      <span class="tag">多 Agent 论文初稿生成系统</span>
+    </div>
+    <nav class="mastnav">
+      <a href="#scale">产出规模</a>
+      <a href="#agents">分工</a>
+      <a href="#plates">图表</a>
+      <a href="#run">本地运行</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="hero-eyebrow"><span class="rule"></span>研究方案 → 论文初稿与验证代码</p>
+      <h1>把一份研究方案，写成有真实数据支撑的论文初稿</h1>
+      <p class="hero-lead">
+        输入 Markdown 或 PDF 研究方案，多 Agent 系统在<b>真实 Jupyter 内核</b>中执行实验，
+        输出期刊 / 学位论文体例的正文 paper.md，以及每一行都能重跑的 notebook.ipynb。
+        论文里的每个实验数值，都来自代码的实际输出，而不是模型编造。
+      </p>
+
+      <div class="transit">
+        <div class="slot"><b>研究方案</b><span>Markdown 或 PDF</span></div>
+        <div class="link"></div>
+        <div class="slot"><b>paper.md</b><span>论文初稿正文</span></div>
+        <div class="link"></div>
+      </div>
+
+      <div class="hero-links">
+        <a href="#run">在本地跑一遍</a>
+        <a class="quiet" href="#scale">看它产出什么</a>
+      </div>
+    </div>
+
+    <figure class="sheet">
+      <p class="running-head"><span>生成样张</span><span>LunwenToCode</span></p>
+      <h2 class="sheet-title">时隙分割下 RIS 辅助多用户 MIMO 系统的能效联合优化</h2>
+      <p class="sheet-byline">论文初稿<span class="sep">／</span>系统自动撰写<span class="sep">／</span>摘要</p>
+      <p class="sheet-abstract">
+        可重构智能表面能够调控无线传播环境，为多用户信息与能量协同传输提供支持。
+        本文研究时隙分割下的 RIS 辅助多用户 MIMO 系统，构建兼顾信息速率、采集能量与净功耗的联合优化模型。
+        基于 100 个独立信道样本开展配对比较，联合设计较固定随机相位和同电路功耗无 RIS 方案，
+        平均能效分别提高 <span class="mark">1.334</span> 和 1.293 Mbit/J；另对 60 个终点解完成复核，均满足约束容差。
+      </p>
+      <p class="sheet-keywords">
+        <b>关键词</b>可重构智能表面；多用户 MIMO；无线信息与能量传输；时隙分割；能效优化
+      </p>
+      <div class="sheet-foot">
+        <span>正文 62,049 字</span>
+        <span>10 章 ／ 270 个公式 ／ 22 张图</span>
+      </div>
+      <span class="seal">已核验<small>真实运行</small></span>
+    </figure>
+  </div>
+</section>
+
+<section class="wrap" id="scale">
+  <div class="section-head">
+    <p class="section-index">第一节<span class="rule"></span></p>
+    <h2>一次真实运行的产出</h2>
+    <p class="deck">
+      以下数字全部来自一次端到端运行：输入一篇 7,749 字的 RIS 辅助 MIMO-SWIPT 研究方案，
+      系统自动拆解 8 个支撑任务，在 Jupyter 内核中执行 2,600 个求解实例后写成论文。
+    </p>
+  </div>
+  <dl class="figures-table">
+    <div><dt>62,049</dt><dd>论文正文字数</dd></div>
+    <div><dt>10</dt><dd>论文章节，引言至结论</dd></div>
+    <div><dt>270</dt><dd>LaTeX 公式块</dd></div>
+    <div><dt>22</dt><dd>实验图表，300dpi</dd></div>
+    <div><dt>101</dt><dd>Notebook 代码单元</dd></div>
+  </dl>
+  <p class="figures-note">
+    图表由代码在内核中直接绘制，论文正文引用的是这些图的源文件；notebook 保存了完整执行轨迹，可逐格重跑。
+  </p>
+</section>
+
+<section class="wrap" id="agents">
+  <div class="section-head">
+    <p class="section-index">第二节<span class="rule"></span></p>
+    <h2>四个 Agent 分工协作</h2>
+    <p class="deck">
+      代码执行与论文写作交错进行：每完成一个实验任务，写作手立即撰写对应章节，
+      因此正文里的数字永远追得上代码的输出。
+    </p>
+  </div>
+  <ol class="agents">
+    <li>
+      <span class="no">一</span>
+      <div>
+        <h3>方案解析</h3>
+        <p class="agent-name">ParserAgent</p>
+        <p class="body">读取 Markdown 或 PDF 研究方案，提取标题、章节结构与关键词；未提供标题时，自动拟定一个规范的学术标题。</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">二</span>
+      <div>
+        <h3>任务拆解</h3>
+        <p class="agent-name">AnalyzerAgent</p>
+        <p class="body">按论文章节组织 5 至 9 个代码支撑任务，涵盖模型实现、算法求解、仿真实验与图表生成，每个任务对应论文的一章。</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">三</span>
+      <div>
+        <h3>真实执行</h3>
+        <p class="agent-name">CoderAgent</p>
+        <p class="body">通过 Function Calling 在持久 Jupyter 内核中编写并执行代码，出错自动反思重试，变量跨任务保留，无需重复装载数据。</p>
+      </div>
+    </li>
+    <li>
+      <span class="no">四</span>
+      <div>
+        <h3>论文撰写</h3>
+        <p class="agent-name">WriterAgent</p>
+        <p class="body">以第一作者口吻撰写各章节：模型部分基于方案素材润色，实验数值严格取自代码真实输出，图表强制插入并逐图解读。</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section class="wrap" id="plates">
+  <div class="section-head">
+    <p class="section-index">第三节<span class="rule"></span></p>
+    <h2>论文自动生成的图表</h2>
+    <p class="deck">
+      节点部署、基线对比与 RIS 规模消融，均由代码在内核中真实绘制，并原样插入正文。
+    </p>
+  </div>
+  <div class="plates">
+    <figure class="plate">
+      <div class="frame"><img src="assets/figures/fig1_node_deployment.png" alt="基站、RIS 与用户的节点部署"></div>
+      <figcaption><b><i>图 1</i>系统节点部署</b>基站、RIS 与信息及能量用户的几何部署，信道样本按此场景生成。</figcaption>
+    </figure>
+    <figure class="plate">
+      <div class="frame"><img src="assets/figures/fig1_baseline_comparison.png" alt="联合设计和基线方法的能效对比"></div>
+      <figcaption><b><i>图 2</i>基线性能对比</b>联合设计较固定随机相位与无 RIS 方案的平均能效对比，基于 100 个信道样本配对比较。</figcaption>
+    </figure>
+    <figure class="plate">
+      <div class="frame"><img src="assets/figures/fig2_RIS_scale_power_ablation.png" alt="RIS 规模与功耗消融"></div>
+      <figcaption><b><i>图 3</i>RIS 规模消融</b>反射单元数量与组件功耗对净能效的共同影响，隔离传播增益与硬件开销。</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="wrap" id="run">
+  <div class="section-head">
+    <p class="section-index">第四节<span class="rule"></span></p>
+    <h2>在本地运行</h2>
+    <p class="deck">
+      本站只是展示页。完整的生成系统在你的机器上运行，可以命令行调用，也可以打开浏览器界面看多 Agent 的执行进度。
+    </p>
+  </div>
+  <div class="runs">
+    <ol>
+      <li>
+        <div>
+          <h3>安装依赖并配置 API Key</h3>
+          <p>复制 .env.example 为 .env，填入分析、代码、写作三个模型各自的配置。</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>生成论文初稿</h3>
+          <p>命令行传入方案文件，指定输出目录。</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>或启动浏览器界面</h3>
+          <p>上传方案文件，实时查看多 Agent 执行进度与日志。</p>
+        </div>
+      </li>
+      <li>
+        <div>
+          <h3>查看产出</h3>
+          <p>输出目录里是 paper.md、notebook.ipynb、图表与依赖清单。</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="terminal">
+      <div><span class="cmt"># 安装</span></div>
+      <div><span class="cmd">$ pip install -r requirements.txt</span></div>
+      <div><span class="cmt"># 配置模型（analysis / code / writer）</span></div>
+      <div><span class="cmd">$ cp .env.example .env</span></div>
+      <div>&nbsp;</div>
+      <div><span class="cmt"># 生成论文初稿</span></div>
+      <div><span class="cmd">$ python main.py --md 方案.md --output ./output</span></div>
+      <div><span class="cmt"># 或启动界面</span></div>
+      <div><span class="cmd">$ python app.py</span></div>
+      <div>&nbsp;</div>
+      <div><span class="ok">✓ 8 个任务完成，2600 个求解实例</span></div>
+      <div><span class="ok">✓ output/paper.md　62,049 字</span></div>
+      <div><span class="ok">✓ output/notebook.ipynb　101 个代码单元</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>LunwenToCode · 研究方案 → 论文初稿与验证代码</span>
+    <span class="seal-note">代码由 AI 生成并真实执行验证，论文数值均来自真实运行结果</span>
+  </div>
+</footer>
+
+</body>
+</html>

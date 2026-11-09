@@ -1,0 +1,31 @@
+[Unit]
+Description=LunwenToCode Web 服务
+After=network.target
+
+[Service]
+Type=simple
+User=lunwen
+Group=lunwen
+WorkingDirectory=/opt/lunwentocode
+Environment="PATH=/opt/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/opt/lunwentocode"
+Environment="PYTHONPATH=/opt/lunwentocode"
+EnvironmentFile=-/opt/lunwentocode/.env
+# 必须单 worker：任务管理器（信号量 / 限流 / 任务注册表）是进程内状态，
+# 多 worker 会导致 SSE 连到没有该任务的进程。
+ExecStart=/opt/venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8000 --workers 1 --timeout-keep-alive 120
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/lunwentocode/web.log
+StandardError=append:/var/log/lunwentocode/web.err
+
+# 安全加固
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=full
+ProtectHome=false
+# Jupyter 内核需要写 HOME（.ipython_kernels）与产出目录
+ReadWritePaths=/opt/lunwentocode /tmp
+
+[Install]
+WantedBy=multi-user.target
