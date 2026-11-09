@@ -41,6 +41,10 @@ class WebSettings(BaseSettings):
     WEB_DIR: str = str(PROJECT_ROOT / "web")
     # 上传临时目录
     UPLOAD_ROOT: str = str(PROJECT_ROOT / "web_uploads")
+    # 演示用产出目录（"运行示例"按钮读取此目录，展示一次真实运行的结果）
+    DEMO_DIR: str = str(PROJECT_ROOT / "output" / "20261109_111122_91dfac")
+    # 演示任务的虚拟 ID
+    DEMO_TASK_ID: str = "demo_20261109_111122_91dfac"
 
     # ---------- 默认模型 ----------
     DEFAULT_ANALYZER_MODEL: str = "gpt-4o"

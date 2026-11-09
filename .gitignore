@@ -13,3 +13,6 @@ site/dist/
 
 .ipynb_checkpoints/
 .DS_Store
+
+# 前端第三方库已本地化到 web/vendor/（KaTeX），需随仓库提交以保证离线可用
+# 如需重新下载：python scripts/fetch_katex.py

@@ -37,6 +37,12 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.config import web_settings
+from server.demo import (
+    build_result,
+    build_timeline,
+    demo_available,
+    demo_file_path,
+)
 from server.task_manager import task_manager
 
 app = FastAPI(
@@ -308,6 +314,36 @@ async def get_zip(task_id: str, x_access_token: Optional[str] = Header(None)):
 async def list_tasks(x_access_token: Optional[str] = Header(None)):
     check_token(x_access_token)
     return {"tasks": task_manager.list_recent(), "active": task_manager.active_count()}
+
+
+# ---------------------------------------------------------------- 演示模式
+
+@app.get("/api/demo")
+async def get_demo(x_access_token: Optional[str] = Header(None)):
+    """演示：一次真实运行的产出内容"""
+    check_token(x_access_token)
+    if not demo_available():
+        raise HTTPException(status_code=404, detail="演示数据不可用")
+    return build_result()
+
+
+@app.get("/api/demo/timeline")
+async def get_demo_timeline(x_access_token: Optional[str] = Header(None)):
+    """演示：脚本化的执行事件时间线"""
+    check_token(x_access_token)
+    if not demo_available():
+        raise HTTPException(status_code=404, detail="演示数据不可用")
+    return {"timeline": build_timeline()}
+
+
+@app.get("/api/demo/files/{name}")
+async def get_demo_file(name: str, x_access_token: Optional[str] = Header(None)):
+    """演示产出的单个文件（图表等）"""
+    check_token(x_access_token)
+    target = demo_file_path(name)
+    if not target:
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(target)
 
 
 @app.get("/api/health")

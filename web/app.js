@@ -10,6 +10,7 @@
     es: null,
     files: [],
     result: null,
+    isDemo: false,
   };
 
   // ------------------------------------------------------------ 工具
@@ -166,14 +167,102 @@
     err.hidden = false;
   }
 
+  // ------------------------------------------------------------ 演示模式
+
+  /** 回放一次真实运行的流程：终端逐条输出，最后展示真实产出 */
+  async function runDemo() {
+    const btn = $('#btn-demo');
+    const err = $('#form-error');
+    err.hidden = true;
+
+    btn.disabled = true;
+    $('.go-label', btn).textContent = '回放中…';
+
+    try {
+      const [tlRes, resultRes] = await Promise.all([
+        apiFetch('/api/demo/timeline'),
+        apiFetch('/api/demo'),
+      ]);
+      if (!tlRes.ok) {
+        const d = await tlRes.json().catch(() => ({}));
+        throw new Error(d.detail || '演示数据不可用');
+      }
+      const { timeline } = await tlRes.json();
+      const result = await resultRes.json();
+
+      // 复用真实任务的状态机
+      state.taskId = result.task_id;
+      state.isDemo = true;
+      $('#log').innerHTML = '';
+      $('#log-block').hidden = false;
+      $('#result-panel').hidden = true;
+      $('#demo-flag').hidden = true;
+      $('#run-task-id').textContent = result.task_id;
+      $('#run-state').textContent = '回放中';
+      $('#btn-back').hidden = false;
+      setProgress(0);
+      setConn('live', '示例回放中');
+
+      // 逐条推送，进度条随阶段推进
+      const total = timeline.length;
+      for (let i = 0; i < total; i++) {
+        const ev = timeline[i];
+        appendLog(ev);
+        const m = (ev.content || '').match(/Phase (\d)\/6/);
+        if (m) {
+          const base = { 1: 10, 2: 16, 3: 28, 4: 38, 5: 55, 6: 90 }[m[1]] || 0;
+          setProgress(Math.max(currentProgress(), base));
+        } else if (ev.type === 'report') {
+          setProgress(Math.min(94, currentProgress() + 1));
+        }
+        await sleep(demoDelay(ev, i));
+      }
+
+      setProgress(100);
+      setConn('done', '示例回放完成');
+      $('#run-state').textContent = '已完成';
+      showResult(result);
+      $('#demo-flag').hidden = false;
+      toast('示例已回放完毕');
+    } catch (ex) {
+      fail(ex.message || '演示回放失败');
+      setConn('error', '示例不可用');
+    } finally {
+      btn.disabled = false;
+      $('.go-label', btn).textContent = '运行示例';
+    }
+  }
+
+  /** 不同类型的事件给不同的停留时间，模拟真实节奏 */
+  function demoDelay(ev, i) {
+    if (ev.type === 'code' && ev.content.indexOf('执行代码') === 0) return 620;
+    if (ev.type === 'code_output') return 300;
+    if (ev.type === 'code') return 200;
+    if (ev.type === 'report') return 260;
+    if (ev.type === 'system') return 340;
+    return 200;
+  }
+
+  function currentProgress() {
+    return parseInt($('#bar-num').textContent) || 0;
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  $('#btn-demo').addEventListener('click', runDemo);
+
   // ------------------------------------------------------------ 执行页
 
   $('#btn-back').addEventListener('click', () => {
     if (state.es) state.es.close();
     state.es = null;
     state.taskId = null;
+    state.isDemo = false;
     $('#log-block').hidden = true;
     $('#result-panel').hidden = true;
+    $('#demo-flag').hidden = true;
     $('#btn-back').hidden = true;
     $('#log').innerHTML = '';
     $('#run-task-id').textContent = '尚未提交任务';
@@ -280,10 +369,13 @@
   function renderFiles(files) {
     const ul = $('#files');
     ul.innerHTML = '';
+    const base = state.isDemo
+      ? '/api/demo/files/'
+      : '/api/tasks/' + state.taskId + '/files/';
     files.forEach((name) => {
       const li = document.createElement('li');
       const a = document.createElement('a');
-      a.href = '/api/tasks/' + state.taskId + '/files/' + encodeURIComponent(name);
+      a.href = base + encodeURIComponent(name);
       a.target = '_blank';
       a.rel = 'noopener';
       const label = document.createElement('span');
@@ -307,8 +399,18 @@
       ['正文字数', (result.report || '').length + ' 字符'],
       ['Notebook', result.notebook || '—'],
       ['依赖库', (result.requirements || []).join(', ') || '无额外依赖'],
-      ['压缩包', (result.zip_name || '') + ' · ' + fmtBytes(result.zip_size)],
     ];
+    if (result.demo) {
+      rows.push(['产物来源', '一次真实运行的产出（示例）']);
+      rows.push(['任务 ID', result.task_id || '—']);
+    } else {
+      rows.push(['压缩包', (result.zip_name || '') + ' · ' + fmtBytes(result.zip_size)]);
+    }
+    if (result.metrics) {
+      Object.keys(result.metrics).forEach((k) => {
+        rows.push([k, String(result.metrics[k])]);
+      });
+    }
     rows.forEach(([k, v]) => {
       const dt = document.createElement('dt');
       dt.textContent = k;
@@ -320,6 +422,10 @@
 
   $('#btn-download').addEventListener('click', () => {
     if (!state.taskId) return;
+    if (state.isDemo) {
+      toast('示例不提供打包下载，可直接查看下方文件列表');
+      return;
+    }
     window.location.href = '/api/tasks/' + state.taskId + '/zip';
   });
 
@@ -349,7 +455,7 @@
 
   // ------------------------------------------------------------ Markdown 渲染
 
-  /** 极简 Markdown → HTML（标题/列表/表格/代码/图片/引用/强调/链接） */
+  /** 极简 Markdown → HTML（标题/列表/表格/代码/图片/引用/强调/链接/LaTeX 公式） */
   function renderMarkdown(md) {
     const esc = (s) => s
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -359,24 +465,83 @@
     let inCode = false, codeLang = '', codeBuf = [];
     let inTable = false, tableBuf = [];
 
-    // 论文正文中的图片是裸文件名（如 fig1.png），需指向任务产出目录
+    // 论文正文中的图片是裸文件名（如 fig1.png），需指向产出目录
     const assetUrl = (src) => {
       if (!src) return '';
       if (/^(https?:)?\/\//i.test(src) || src.startsWith('data:')) return src;
       if (src.startsWith('/')) return src;
-      return state.taskId
-        ? '/api/tasks/' + state.taskId + '/files/' + encodeURIComponent(src)
-        : src;
+      if (!state.taskId) return src;
+      const base = state.isDemo
+        ? '/api/demo/files/'
+        : '/api/tasks/' + state.taskId + '/files/';
+      return base + encodeURIComponent(src);
     };
 
-    const inline = (s) => esc(s)
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) =>
-        `<img src="${assetUrl(src)}" alt="${alt}">`)
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, href) =>
-        `<a href="${assetUrl(href)}" target="_blank" rel="noopener">${t}</a>`)
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
+    // ---- LaTeX 公式 ----
+    // 块公式 $$...$$ 与行内公式 $...$ 都交给 KaTeX 渲染
+    const hasKatex = typeof window.katex !== 'undefined';
+
+    /** 渲染单个 LaTeX（displayMode 决定块/行内） */
+    const tex = (src, display) => {
+      const clean = src.trim();
+      if (!hasKatex) {
+        // 兜底：无 KaTeX 时保留源码，但排版上仍区别块/行内
+        return display
+          ? `<pre class="tex-raw">${esc(clean)}</pre>`
+          : `<code class="tex-raw">${esc(clean)}</code>`;
+      }
+      try {
+        return window.katex.renderToString(clean, {
+          displayMode: !!display,
+          throwOnError: false,
+          strict: false,
+          trust: false,
+          output: 'html',
+        });
+      } catch (e) {
+        return `<code class="tex-raw">${esc(clean)}</code>`;
+      }
+    };
+
+    // 行内公式先抽成占位符，避免 LaTeX 里的 * _ ` 等被 Markdown 语法误伤
+    const MATH_SLOT = ' MATH ';
+    let mathSlot = [];
+
+    const protectMath = (s) => {
+      mathSlot = [];
+      const stash = (html) => {
+        mathSlot.push(html);
+        return MATH_SLOT + (mathSlot.length - 1) + MATH_SLOT;
+      };
+      return s
+        // 块公式（行内出现时也识别）
+        .replace(/\$\$([\s\S]+?)\$\$/g, (_, body) => stash(tex(body, true)))
+        // 行内公式：不跨行、两侧不紧邻 $
+        .replace(/(?<!\\)\$([^$\n]+?)\$/g, (m, body) => {
+          if (!body.trim()) return m;
+          return stash(tex(body, false));
+        });
+    };
+
+    const restoreMath = (html) =>
+      html.replace(
+        new RegExp(MATH_SLOT + '(\\d+)' + MATH_SLOT, 'g'),
+        (_, i) => mathSlot[Number(i)] || ''
+      );
+
+    /** 段落级文本：Markdown 内联语法 + 行内公式 */
+    const inline = (s) => {
+      const withMath = protectMath(s);
+      const protectedText = esc(withMath)
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) =>
+          `<img src="${assetUrl(src)}" alt="${alt}">`)
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, href) =>
+          `<a href="${assetUrl(href)}" target="_blank" rel="noopener">${t}</a>`)
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+      return restoreMath(protectedText);
+    };
 
     const flushTable = () => {
       if (!inTable) return;
@@ -408,6 +573,34 @@
         continue;
       }
       if (inCode) { codeBuf.push(line); continue; }
+
+      // 块公式 $$ ... $$（可能跨多行）
+      if (/^\s*\$\$/.test(line)) {
+        const buf = [];
+        const first = line.trim();
+        // 同一行闭合
+        if (first.length > 4 && first.endsWith('$$') && !first.endsWith('$$$$')) {
+          const body = first.slice(2, -2);
+          out.push(`<div class="math-block">${tex(body, true)}</div>`);
+          continue;
+        }
+        buf.push(first.slice(2));
+        let j = i + 1;
+        let closed = false;
+        while (j < lines.length) {
+          const l = lines[j];
+          if (/\s*\$\$\s*$/.test(l)) {
+            buf.push(l.replace(/\s*\$\$\s*$/, ''));
+            closed = true;
+            break;
+          }
+          buf.push(l);
+          j++;
+        }
+        out.push(`<div class="math-block">${tex(buf.join('\n'), true)}</div>`);
+        i = closed ? j : lines.length - 1;
+        continue;
+      }
 
       // 表格
       if (/^\|/.test(line.trim())) {

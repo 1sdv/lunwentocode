@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LunwenToCode — 论文初稿生成</title>
+<link rel="stylesheet" href="/static/vendor/katex.min.css">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -108,6 +109,10 @@
               <span class="go-label">开始生成</span>
               <span class="go-note">通常需要数分钟</span>
             </button>
+            <button type="button" class="go go-quiet" id="btn-demo">
+              <span class="go-label">运行示例</span>
+              <span class="go-note">不用填 Key，看一遍流程</span>
+            </button>
             <p class="form-error" id="form-error" hidden></p>
           </div>
         </form>
@@ -131,7 +136,10 @@
               <h2 class="block-title">论文初稿</h2>
               <p class="result-title" id="result-title"></p>
             </div>
-            <button class="text-btn strong" id="btn-download" type="button">下载项目包</button>
+            <div class="result-tools">
+              <span class="demo-flag" id="demo-flag" hidden>示例</span>
+              <button class="text-btn strong" id="btn-download" type="button">下载项目包</button>
+            </div>
           </div>
 
           <nav class="tabs">
@@ -186,6 +194,7 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<script src="/static/vendor/katex.min.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>
