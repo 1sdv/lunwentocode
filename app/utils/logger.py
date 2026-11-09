@@ -1,31 +1,22 @@
 """
 日志工具
+
+统一复用 server.logging_setup 的配置（控制台 + logs/web.log 文件），
+避免同一日志在控制台输出两次。
 """
 import logging
-import sys
+
 from app.config.settings import settings
+from server.logging_setup import setup_logging
 
 
 def setup_logger(name: str = "biyetocode") -> logging.Logger:
     """设置日志器"""
+    setup_logging()
     logger = logging.getLogger(name)
-    
-    if not logger.handlers:
-        logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper()))
-        
-        # 控制台处理器
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.DEBUG)
-        
-        # 格式化器
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        console_handler.setFormatter(formatter)
-        
-        logger.addHandler(console_handler)
-    
+    logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
+    # 交给 root logger 的 handler 输出（控制台 + 文件）
+    logger.propagate = True
     return logger
 
 

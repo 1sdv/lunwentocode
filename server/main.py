@@ -36,6 +36,7 @@ from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from server.logging_setup import get_logger, setup_logging
 from server.config import web_settings
 from server.demo import (
     build_result,
@@ -45,6 +46,8 @@ from server.demo import (
     demo_zip_path,
 )
 from server.task_manager import task_manager
+
+logger = get_logger("web")
 
 app = FastAPI(
     title="LunwenToCode Web",
@@ -60,6 +63,22 @@ if web_settings.cors_origin_list:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+@app.middleware("http")
+async def access_log(request: Request, call_next):
+    """记录每次请求，便于排查前后端交互问题"""
+    started = time.perf_counter()
+    response = await call_next(request)
+    cost = (time.perf_counter() - started) * 1000
+    logger.info(
+        "%s %s -> %s (%.1fms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        cost,
+    )
+    return response
 
 
 # ---------------------------------------------------------------- 鉴权
@@ -83,7 +102,9 @@ def client_ip(request: Request) -> str:
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    setup_logging()
     web_settings.ensure_dirs()
+    logger.info("服务启动 | 输出目录=%s | 日志文件=logs/web.log", web_settings.OUTPUT_ROOT)
     # 后台清理过期任务
     asyncio.create_task(_cleanup_loop())
     # 后台预热演示包，避免用户第一次点下载时干等
