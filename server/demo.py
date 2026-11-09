@@ -4,9 +4,11 @@
 「运行示例」按钮的后端支撑：
 - 提供脚本化的事件时间线（与真实工作流的 EventBus 事件类型一一对应）
 - 提供真实产出目录的读取（论文正文、图表、依赖清单）
+- 按需把产出目录打包成 zip 供下载（与真实任务的下载包结构一致）
 """
 import json
 import re
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -189,6 +191,7 @@ def build_result() -> Dict[str, Any]:
 
     total_chars = len(report)
     png_count = len([f for f in files if f.endswith(".png")])
+    zip_info = demo_zip_info()
 
     return {
         "task_id": web_settings.DEMO_TASK_ID,
@@ -200,8 +203,8 @@ def build_result() -> Dict[str, Any]:
         "tasks_success": len(analysis.get("code_tasks", [])),
         "notebook": "notebook.ipynb",
         "readme": _read("README.md"),
-        "zip_name": "",
-        "zip_size": 0,
+        "zip_name": zip_info["zip_name"],
+        "zip_size": zip_info["zip_size"],
         "files": files,
         "demo": True,
         "metrics": {
@@ -221,3 +224,63 @@ def demo_file_path(name: str) -> Optional[Path]:
     if not str(target).startswith(str(demo_dir)):
         return None
     return target if target.is_file() else None
+
+
+# ---------------------------------------------------------------- 打包下载
+
+# 打包时跳过这些：Python 缓存与临时文件，对交付无意义
+_ZIP_EXCLUDE_DIRS = {"__pycache__", ".ipynb_checkpoints", ".git"}
+_ZIP_EXCLUDE_SUFFIX = (".pyc", ".pyo", ".tmp")
+
+
+def _iter_zip_files(root: Path):
+    """产出目录里所有该进包的文件"""
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if any(part in _ZIP_EXCLUDE_DIRS for part in rel.parts):
+            continue
+        if path.suffix in _ZIP_EXCLUDE_SUFFIX:
+            continue
+        yield path, rel
+
+
+def demo_zip_path() -> Optional[Path]:
+    """把演示产出打包成 zip（带缓存，重复下载不重复打包）。
+
+    返回 None 表示演示数据不可用。
+    """
+    demo_dir = _demo_dir()
+    if not (demo_dir / "paper.md").exists():
+        return None
+
+    # 缓存放在产出目录之外，避免被打进包自己里
+    cache_dir = Path(web_settings.OUTPUT_ROOT) / "_demo"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = cache_dir / "demo_project.zip"
+
+    # 源目录里最新的文件时间，用作缓存失效判据
+    newest = max(
+        (p.stat().st_mtime for p in demo_dir.rglob("*") if p.is_file()),
+        default=0.0,
+    )
+
+    if zip_path.exists() and zip_path.stat().st_mtime >= newest:
+        return zip_path
+
+    # 先写临时文件再替换，避免中途被打断留下坏包
+    tmp_path = cache_dir / "demo_project.tmp.zip"
+    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for path, rel in _iter_zip_files(demo_dir):
+            zf.write(path, arcname=str(rel))
+    tmp_path.replace(zip_path)
+    return zip_path
+
+
+def demo_zip_info() -> Dict[str, Any]:
+    """演示包的名称与大小（供前端展示）"""
+    path = demo_zip_path()
+    if not path or not path.exists():
+        return {"zip_name": "", "zip_size": 0}
+    return {"zip_name": path.name, "zip_size": path.stat().st_size}

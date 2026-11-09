@@ -42,6 +42,7 @@ from server.demo import (
     build_timeline,
     demo_available,
     demo_file_path,
+    demo_zip_path,
 )
 from server.task_manager import task_manager
 
@@ -85,6 +86,16 @@ async def on_startup() -> None:
     web_settings.ensure_dirs()
     # 后台清理过期任务
     asyncio.create_task(_cleanup_loop())
+    # 后台预热演示包，避免用户第一次点下载时干等
+    asyncio.create_task(_warm_demo_zip())
+
+
+async def _warm_demo_zip() -> None:
+    """启动后后台打包演示项目包（失败不影响服务）"""
+    try:
+        await asyncio.to_thread(demo_zip_path)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def _cleanup_loop() -> None:
@@ -287,8 +298,13 @@ async def stream_task(
 
 
 @app.get("/api/tasks/{task_id}/files/{name}")
-async def get_file(task_id: str, name: str, x_access_token: Optional[str] = Header(None)):
-    check_token(x_access_token)
+async def get_file(
+    task_id: str,
+    name: str,
+    token: Optional[str] = None,
+    x_access_token: Optional[str] = Header(None),
+):
+    check_token(token or x_access_token)
     work_dir = task_manager.get_work_dir(task_id)
     if not work_dir:
         raise HTTPException(status_code=404, detail="产出不存在")
@@ -302,8 +318,12 @@ async def get_file(task_id: str, name: str, x_access_token: Optional[str] = Head
 
 
 @app.get("/api/tasks/{task_id}/zip")
-async def get_zip(task_id: str, x_access_token: Optional[str] = Header(None)):
-    check_token(x_access_token)
+async def get_zip(
+    task_id: str,
+    token: Optional[str] = None,
+    x_access_token: Optional[str] = Header(None),
+):
+    check_token(token or x_access_token)
     zip_path = Path(web_settings.OUTPUT_ROOT) / task_id / "project.zip"
     if not zip_path.exists():
         raise HTTPException(status_code=404, detail="压缩包不存在")
@@ -324,7 +344,8 @@ async def get_demo(x_access_token: Optional[str] = Header(None)):
     check_token(x_access_token)
     if not demo_available():
         raise HTTPException(status_code=404, detail="演示数据不可用")
-    return build_result()
+    # 打包可能耗时，放线程里避免阻塞事件循环
+    return await asyncio.to_thread(build_result)
 
 
 @app.get("/api/demo/timeline")
@@ -337,13 +358,41 @@ async def get_demo_timeline(x_access_token: Optional[str] = Header(None)):
 
 
 @app.get("/api/demo/files/{name}")
-async def get_demo_file(name: str, x_access_token: Optional[str] = Header(None)):
-    """演示产出的单个文件（图表等）"""
-    check_token(x_access_token)
+async def get_demo_file(
+    name: str,
+    token: Optional[str] = None,
+    x_access_token: Optional[str] = Header(None),
+):
+    """演示产出的单个文件（图表等）
+
+    <img> 标签无法自定义请求头，故同时支持 ?token= 查询参数（同 SSE）。
+    """
+    check_token(token or x_access_token)
     target = demo_file_path(name)
     if not target:
         raise HTTPException(status_code=404, detail="文件不存在")
     return FileResponse(target)
+
+
+@app.get("/api/demo/zip")
+async def get_demo_zip(
+    token: Optional[str] = None,
+    x_access_token: Optional[str] = Header(None),
+):
+    """演示产出的完整项目包
+
+    首次访问时打包（约 5500 个文件，需要一点时间），之后走缓存。
+    打包放到线程里执行，不阻塞事件循环。
+    """
+    check_token(token or x_access_token)
+    zip_path = await asyncio.to_thread(demo_zip_path)
+    if not zip_path or not zip_path.exists():
+        raise HTTPException(status_code=404, detail="演示数据不可用")
+    return FileResponse(
+        zip_path,
+        filename=f"lunwentocode_demo_{web_settings.DEMO_TASK_ID}.zip",
+        media_type="application/zip",
+    )
 
 
 @app.get("/api/health")

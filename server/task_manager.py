@@ -343,6 +343,9 @@ class TaskManager:
         for child in root.iterdir():
             if not child.is_dir():
                 continue
+            # _demo 是演示包的缓存目录，不属于任务产物，保留
+            if child.name.startswith("_"):
+                continue
             try:
                 if now - child.stat().st_mtime > ttl:
                     shutil.rmtree(child, ignore_errors=True)

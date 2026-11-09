@@ -486,10 +486,12 @@
     const base = state.isDemo
       ? '/api/demo/files/'
       : '/api/tasks/' + state.taskId + '/files/';
+    const t = getToken();
+    const q = t ? '?token=' + encodeURIComponent(t) : '';
     files.forEach((name) => {
       const li = document.createElement('li');
       const a = document.createElement('a');
-      a.href = base + encodeURIComponent(name);
+      a.href = base + encodeURIComponent(name) + q;
       a.target = '_blank';
       a.rel = 'noopener';
       const label = document.createElement('span');
@@ -517,8 +519,9 @@
     if (result.demo) {
       rows.push(['产物来源', '一次真实运行的产出（示例）']);
       rows.push(['任务 ID', result.task_id || '—']);
-    } else {
-      rows.push(['压缩包', (result.zip_name || '') + ' · ' + fmtBytes(result.zip_size)]);
+    }
+    if (result.zip_name) {
+      rows.push(['压缩包', result.zip_name + ' · ' + fmtBytes(result.zip_size)]);
     }
     if (result.metrics) {
       Object.keys(result.metrics).forEach((k) => {
@@ -536,11 +539,17 @@
 
   $('#btn-download').addEventListener('click', () => {
     if (!state.taskId) return;
-    if (state.isDemo) {
-      toast('示例不提供打包下载，可直接查看下方文件列表');
-      return;
+    // 演示与真实任务都有项目包，只是路径不同
+    // 下载走 <a> 导航，无法自定义请求头，令牌放查询参数
+    const base = state.isDemo
+      ? '/api/demo/zip'
+      : '/api/tasks/' + state.taskId + '/zip';
+    const t = getToken();
+    // 演示包首次访问需现场打包（约 5500 个文件），给个提示免得以为卡死
+    if (state.isDemo && !(state.result && state.result.zip_size)) {
+      toast('正在打包示例项目包，约需十几秒…', 6000);
     }
-    window.location.href = '/api/tasks/' + state.taskId + '/zip';
+    window.location.href = base + (t ? '?token=' + encodeURIComponent(t) : '');
   });
 
   $('#btn-copy-log').addEventListener('click', async () => {
@@ -580,6 +589,7 @@
     let inTable = false, tableBuf = [];
 
     // 论文正文中的图片是裸文件名（如 fig1.png），需指向产出目录
+    // <img> / 下载链接无法自定义请求头，令牌走 ?token= 查询参数
     const assetUrl = (src) => {
       if (!src) return '';
       if (/^(https?:)?\/\//i.test(src) || src.startsWith('data:')) return src;
@@ -588,7 +598,13 @@
       const base = state.isDemo
         ? '/api/demo/files/'
         : '/api/tasks/' + state.taskId + '/files/';
-      return base + encodeURIComponent(src);
+      return base + encodeURIComponent(src) + tokenQuery();
+    };
+
+    /** 令牌查询参数（仅在站点启用令牌时附加） */
+    const tokenQuery = () => {
+      const t = getToken();
+      return t ? '?token=' + encodeURIComponent(t) : '';
     };
 
     // ---- LaTeX 公式 ----
