@@ -114,7 +114,36 @@ async def index() -> HTMLResponse:
     index_file = Path(web_settings.WEB_DIR) / "index.html"
     if not index_file.exists():
         return HTMLResponse("<h1>前端未构建</h1>", status_code=500)
-    return HTMLResponse(index_file.read_text(encoding="utf-8"))
+    html = index_file.read_text(encoding="utf-8")
+    # 前端资源加版本号，避免浏览器缓存住旧代码（改了前端却看不到效果）
+    html = _with_asset_version(html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+def _asset_version() -> str:
+    """按前端文件的修改时间生成版本号"""
+    stamps = []
+    for name in ("app.js", "style.css", "index.html"):
+        p = Path(web_settings.WEB_DIR) / name
+        if p.exists():
+            stamps.append(int(p.stat().st_mtime))
+    return str(max(stamps) if stamps else 0)
+
+
+def _with_asset_version(html: str) -> str:
+    """给 /static/ 引用追加 ?v= 版本号"""
+    import re
+
+    ver = _asset_version()
+
+    def repl(match: "re.Match[str]") -> str:
+        attr = match.group(1)
+        url = match.group(2)
+        if "?" in url:
+            return match.group(0)
+        return f'{attr}="{url}?v={ver}"'
+
+    return re.sub(r'(src|href)="(/static/[^"]+)"', repl, html)
 
 
 @app.get("/site/{path:path}")

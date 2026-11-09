@@ -4,6 +4,8 @@
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  /** 在指定容器内查找（$ 只接受一个参数，第二个参数会被忽略） */
+  const $in = (root, sel) => (root || document).querySelector(sel);
 
   const state = {
     taskId: null,
@@ -228,7 +230,7 @@
 
     const btn = $('#submit');
     btn.disabled = true;
-    $('.go-label', btn).textContent = '提交中…';
+    $in(btn, '.go-label').textContent = '提交中…';
 
     const fd = new FormData();
     fd.append('proposal', proposal);
@@ -248,7 +250,7 @@
       fail(ex.message || '提交失败');
     } finally {
       btn.disabled = false;
-      $('.go-label', btn).textContent = '开始生成';
+      $in(btn, '.go-label').textContent = '开始生成';
     }
   });
 
@@ -267,7 +269,7 @@
     err.hidden = true;
 
     btn.disabled = true;
-    $('.go-label', btn).textContent = '回放中…';
+    $in(btn, '.go-label').textContent = '回放中…';
 
     try {
       const [tlRes, resultRes] = await Promise.all([
@@ -320,7 +322,7 @@
       setConn('error', '示例不可用');
     } finally {
       btn.disabled = false;
-      $('.go-label', btn).textContent = '运行示例';
+      $in(btn, '.go-label').textContent = '运行示例';
     }
   }
 
