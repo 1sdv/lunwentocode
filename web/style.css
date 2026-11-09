@@ -135,6 +135,11 @@ a { color: inherit; }
   padding: 0 5px; margin-left: 7px; vertical-align: 1px;
 }
 .mark-optional { font-size: 11.5px; color: var(--dim); font-weight: 400; margin-left: 7px; }
+.mark-ok {
+  font-size: 11px; color: var(--accent); font-weight: 400;
+  border: 1px solid rgba(217, 180, 74, .45); border-radius: 2px;
+  padding: 0 5px; margin-left: 7px; vertical-align: 1px;
+}
 
 /* ---- 上传区 ---- */
 .drop {
@@ -170,6 +175,19 @@ a { color: inherit; }
 .block-fold > summary::-webkit-details-marker { display: none; }
 .fold-label { font-family: var(--serif); font-size: 17px; font-weight: 700; }
 .fold-note { font-size: 12.5px; color: var(--muted); }
+/* summary 内的按钮：不触发折叠，右对齐 */
+.fold-act {
+  margin-left: auto;
+  background: none; border: 1px solid var(--rule);
+  color: var(--muted); border-radius: var(--r);
+  padding: 4px 12px; cursor: pointer;
+  font-family: var(--sans); font-size: 12.5px;
+  transition: color var(--ease), border-color var(--ease), background var(--ease);
+}
+.fold-act:hover {
+  color: var(--accent); border-color: var(--accent);
+  background: rgba(217, 180, 74, .08);
+}
 .fold-body { padding-top: 20px; display: grid; gap: 16px; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .row-3 { grid-template-columns: repeat(3, 1fr); }
@@ -415,6 +433,87 @@ input::placeholder { color: #676956; }
   transition: color var(--ease), border-color var(--ease);
 }
 .back:hover { color: var(--fg); border-color: var(--muted); }
+
+/* ================= 配置指引弹窗 ================= */
+.guide {
+  border: none; padding: 0;
+  background: transparent;
+  /* 全局 * { margin: 0 } 会清掉 dialog 的默认居中 margin，需显式恢复 */
+  margin: auto;
+  max-width: min(520px, calc(100vw - 32px));
+  width: 100%;
+  color: var(--fg);
+}
+.guide::backdrop {
+  background: rgba(6, 8, 4, .72);
+  backdrop-filter: blur(2px);
+}
+.guide-inner {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--accent);
+  border-radius: var(--r);
+  padding: 26px 28px 22px;
+  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, .95);
+}
+.guide-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px;
+}
+.guide-head h3 {
+  font-family: var(--serif); font-size: 19px; font-weight: 700; margin: 0;
+}
+.guide-x {
+  background: none; border: none; cursor: pointer;
+  color: var(--dim); font-size: 22px; line-height: 1;
+  padding: 0 4px; transition: color var(--ease);
+}
+.guide-x:hover { color: var(--accent); }
+
+.guide-list { list-style: none; margin: 0; padding: 0; counter-reset: g; }
+.guide-list li {
+  counter-increment: g;
+  padding: 0 0 0 34px; margin-bottom: 16px; position: relative;
+}
+.guide-list li::before {
+  content: counter(g);
+  position: absolute; left: 0; top: 1px;
+  width: 21px; height: 21px; line-height: 21px; text-align: center;
+  border: 1px solid var(--rule); border-radius: 50%;
+  color: var(--accent); font-family: var(--mono); font-size: 11.5px;
+}
+.guide-list b {
+  font-family: var(--serif); font-size: 15.5px; font-weight: 700;
+  margin-right: 4px;
+}
+.guide-list p {
+  margin: 5px 0 0; font-size: 13px; line-height: 1.75; color: var(--muted);
+}
+.guide-list code {
+  font-family: var(--mono); font-size: 12px;
+  background: rgba(8, 10, 6, .5); border: 1px solid var(--rule);
+  padding: 1px 5px; border-radius: 3px; color: var(--accent);
+}
+.tag {
+  font-style: normal; font-size: 11px; color: var(--dim);
+  border: 1px solid var(--rule); border-radius: 2px; padding: 0 5px;
+}
+.tag-req { color: var(--accent-deep); border-color: rgba(181, 83, 60, .45); }
+.tag-auto { color: var(--accent); border-color: rgba(217, 180, 74, .45); }
+
+.guide-foot {
+  display: flex; gap: 12px; justify-content: flex-end;
+  margin-top: 22px; padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+.guide-foot .go { padding: 10px 20px; }
+.guide-foot .go-label { font-size: 14px; }
+
+@media (max-width: 560px) {
+  .guide-inner { padding: 20px 18px 16px; }
+  .guide-foot { flex-direction: column-reverse; }
+  .guide-foot .go { justify-content: center; width: 100%; }
+}
 
 /* ================= toast ================= */
 .toast {

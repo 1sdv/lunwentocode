@@ -356,6 +356,27 @@ async def health():
     }
 
 
+@app.get("/api/config")
+async def public_config():
+    """站点公开配置：供前端预填访问令牌与默认模型
+
+    刻意不需要令牌——否则前端拿不到令牌就无法提交请求。
+    若需严格鉴权，把 EXPOSE_SITE_TOKEN 设为 false，令牌改由用户手动填写。
+    """
+    return {
+        "site_token": (
+            web_settings.SITE_TOKEN if web_settings.EXPOSE_SITE_TOKEN else ""
+        ),
+        "token_required": bool(web_settings.SITE_TOKEN),
+        "defaults": {
+            "base_url": web_settings.DEFAULT_BASE_URL,
+            "analyzer_model": web_settings.DEFAULT_ANALYZER_MODEL,
+            "coder_model": web_settings.DEFAULT_CODER_MODEL,
+            "writer_model": web_settings.DEFAULT_WRITER_MODEL,
+        },
+    }
+
+
 # ---------------------------------------------------------------- 静态资源
 
 if Path(web_settings.WEB_DIR).exists():

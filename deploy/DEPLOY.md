@@ -90,6 +90,10 @@ nano .env
 ```env
 # 访问令牌：用户在页面上填写后才能提交任务。留空 = 任何人可提交（会烧你的额度）
 SITE_TOKEN=换成你自己的随机串
+# 是否把令牌下发给前端自动填入（免去用户手动输入）
+# true  = 用户打开页面就自动填好，直接点「开始生成」
+# false = 用户需手动填写（令牌会出现在页面源码里，true 等于公开令牌）
+EXPOSE_SITE_TOKEN=true
 ```
 
 生成随机串：
@@ -97,6 +101,13 @@ SITE_TOKEN=换成你自己的随机串
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 ```
+
+> **关于 `EXPOSE_SITE_TOKEN` 的取舍**
+>
+> 默认 `true`，令牌会由 `/api/config` 下发并自动填入输入框——省去用户手输。
+> 但这也意味着**任何人都能从页面源码里看到令牌**。
+> 所以它只能当「防随手滥用 / 挡机器人」的软门槛，不是真正的鉴权。
+> 若你的站点要严格控人，请设 `EXPOSE_SITE_TOKEN=false`，把令牌当作口令私下发给用户。
 
 其余按机器规格调：
 
@@ -273,7 +284,8 @@ sudo -u lunwen /opt/venv/bin/jupyter kernelspec list
 
 1. **API Key 由用户自带**，只存在于任务内存与请求体中，不落盘、不进日志。服务端 `.env` 的 Key 仅作可选兜底。
 2. **务必设置 `SITE_TOKEN`**。否则任何人可提交任务，白烧你的服务器资源和 LLM 额度。
-   用户在页面「模型与接口 → 访问令牌」填写即可，前端会存在本地浏览器。
+   默认 `EXPOSE_SITE_TOKEN=true`，页面打开即自动填好，用户无需手动输入——
+   但令牌等同于公开，只算软门槛；要严格控人就设 `false`，让用户手填。
 3. **Jupyter 内核执行的是 LLM 生成的代码**，本质是任意代码执行。公网部署前务必：
    - 用低权限用户运行（`lunwen`），**不要用 root**
    - systemd 已加 `NoNewPrivileges`；容器里限制内存上限
@@ -290,7 +302,7 @@ sudo -u lunwen /opt/venv/bin/jupyter kernelspec list
 |------|------------|
 | 页面看不到实时进度，只在最后一次性出现 | Nginx 少了 `proxy_buffering off`；也检查 `proxy_read_timeout` 是否够大 |
 | 任务卡在「启动 Jupyter 内核」 | `ipykernel` 没装在 uvicorn 所在解释器。`/opt/venv/bin/python -m ipykernel install --sys-prefix --name python3` |
-| 提交后 401 | `SITE_TOKEN` 已启用，页面里要填访问令牌 |
+| 提交后 401 | `SITE_TOKEN` 已启用但页面令牌是空的——检查 `EXPOSE_SITE_TOKEN` 是否为 `false` 而用户没填 |
 | 提交后 429 | 触发限流，等一分钟或调大 `RATE_LIMIT_PER_MINUTE` |
 | 图表中文变方块 | 缺中文字体：`apt install fonts-wqy-zenhei fonts-noto-cjk` 后重启服务 |
 | 上传大文件 413 | Nginx `client_max_body_size` 要 ≥ 后端 `MAX_UPLOAD_MB` |

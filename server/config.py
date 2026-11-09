@@ -17,6 +17,9 @@ class WebSettings(BaseSettings):
     # ---------- 访问控制 ----------
     # 站点访问令牌：设置后所有 API 请求需带 X-Access-Token 头（留空 = 不启用）
     SITE_TOKEN: str = ""
+    # 是否把站点令牌下发给前端自动填入（免去用户手动输入）
+    # 注意：开启后令牌会出现在页面源码中，等同于公开，只适合"防随手滥用"而非严格鉴权
+    EXPOSE_SITE_TOKEN: bool = True
     # 允许的跨域来源（前后端同域部署时留空即可）
     CORS_ORIGINS: str = ""
 

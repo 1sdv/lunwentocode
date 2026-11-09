@@ -70,17 +70,19 @@
             <summary>
               <span class="fold-label">模型与接口</span>
               <span class="fold-note">默认 gpt-4o，官方接口</span>
+              <button type="button" class="fold-act" id="btn-config">配置指引</button>
             </summary>
             <div class="fold-body">
               <div class="row">
                 <div class="col">
                   <label for="api_key">API Key <span class="mark-required">必填</span></label>
                   <input type="password" id="api_key" name="api_key" placeholder="sk-..." autocomplete="off">
+                  <p class="field-note">只保存在本机浏览器，不会提交给模型服务商</p>
                 </div>
                 <div class="col">
-                  <label for="site_token">访问令牌 <span class="mark-optional">站点启用时需要</span></label>
+                  <label for="site_token">访问令牌 <span class="mark-optional" id="token-state">站点启用时需要</span></label>
                   <input type="password" id="site_token" name="site_token" placeholder="X-Access-Token" autocomplete="off">
-                  <p class="field-note">存在本机浏览器，不会提交给模型服务商</p>
+                  <p class="field-note" id="token-note">存在本机浏览器，不会提交给模型服务商</p>
                 </div>
               </div>
               <div class="col">
@@ -191,6 +193,40 @@
   </section>
 
 </main>
+
+<!-- ===== 配置指引 ===== -->
+<dialog class="guide" id="dlg-config">
+  <div class="guide-inner">
+    <div class="guide-head">
+      <h3>要填哪些配置</h3>
+      <button type="button" class="guide-x" id="dlg-close" aria-label="关闭">×</button>
+    </div>
+
+    <ol class="guide-list">
+      <li>
+        <b>API Key</b><em class="tag tag-req">必填</em>
+        <p>模型服务商的密钥，形如 <code>sk-...</code>。只保存在本机浏览器，不会写入服务器。</p>
+      </li>
+      <li>
+        <b>Base URL</b><em class="tag">可选</em>
+        <p>自定义或代理接口地址，如 <code>https://api.openai.com/v1</code>。留空则用官方地址。</p>
+      </li>
+      <li>
+        <b>模型名</b><em class="tag">可选</em>
+        <p>分析 / 代码 / 写作三个模型可分别指定，留空用服务端默认值。</p>
+      </li>
+      <li>
+        <b>访问令牌</b><em class="tag tag-auto" id="dlg-token-tag">自动填入</em>
+        <p id="dlg-token-note">站点令牌已由服务端自动填入，无需手动输入。</p>
+      </li>
+    </ol>
+
+    <div class="guide-foot">
+      <button type="button" class="go go-quiet" id="dlg-cancel">知道了</button>
+      <button type="button" class="go" id="dlg-goto">去填写</button>
+    </div>
+  </div>
+</dialog>
 
 <div class="toast" id="toast" hidden></div>
 

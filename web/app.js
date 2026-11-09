@@ -11,6 +11,8 @@
     files: [],
     result: null,
     isDemo: false,
+    tokenRequired: false,
+    siteConfig: null,
   };
 
   // ------------------------------------------------------------ 工具
@@ -30,6 +32,95 @@
     const headers = Object.assign({}, opts.headers || {});
     if (token) headers['X-Access-Token'] = token;
     return fetch(url, Object.assign({}, opts, { headers }));
+  }
+
+  // ------------------------------------------------------------ 站点配置
+
+  /** 只在输入框为空时填默认值，不覆盖用户已填的内容 */
+  function fillIfEmpty(sel, value) {
+    if (!value) return;
+    const el = $(sel);
+    if (el && !el.value.trim()) el.value = value;
+  }
+
+  /** 拉取服务端公开配置：预填访问令牌与默认模型 */
+  async function loadSiteConfig() {
+    let cfg;
+    try {
+      const res = await fetch('/api/config', { cache: 'no-store' });
+      if (!res.ok) return;
+      cfg = await res.json();
+    } catch (e) {
+      return; // 拿不到配置不影响主流程
+    }
+    if (!cfg) return;
+
+    state.siteConfig = cfg;
+    state.tokenRequired = !!cfg.token_required;
+    const d = cfg.defaults || {};
+
+    fillIfEmpty('#base_url', d.base_url);
+    fillIfEmpty('#analyzer_model', d.analyzer_model);
+    fillIfEmpty('#coder_model', d.coder_model);
+    fillIfEmpty('#writer_model', d.writer_model);
+
+    // 访问令牌：服务端下发即自动填入，用户无需手动输入
+    const tok = $('#site_token');
+    const label = $('#token-state');
+    const note = $('#token-note');
+    if (cfg.site_token) {
+      if (tok && !tok.value.trim()) {
+        tok.value = cfg.site_token;
+        localStorage.setItem(TOKEN_KEY, cfg.site_token);
+      }
+      if (label) {
+        label.textContent = '已自动填入';
+        label.className = 'mark-ok';
+      }
+      if (note) note.textContent = '已由站点自动填入，可直接开始生成';
+    } else if (!state.tokenRequired) {
+      if (label) {
+        label.textContent = '本站点未启用';
+        label.className = 'mark-optional';
+      }
+      if (note) note.textContent = '当前站点不校验令牌，留空即可';
+    } else {
+      if (label) {
+        label.textContent = '需要填写';
+        label.className = 'mark-required';
+      }
+      if (note) note.textContent = '站点要求令牌，请向管理员获取';
+    }
+  }
+
+  // ------------------------------------------------------------ 配置指引弹窗
+
+  function openConfigGuide() {
+    const dlg = $('#dlg-config');
+    if (!dlg) return;
+    const tag = $('#dlg-token-tag');
+    const note = $('#dlg-token-note');
+    const filled = !!((state.siteConfig && state.siteConfig.site_token)) || !!getToken();
+    if (tag) {
+      tag.textContent = filled ? '已自动填入' : '需手动填写';
+      tag.className = 'tag ' + (filled ? 'tag-auto' : 'tag-req');
+    }
+    if (note) {
+      note.textContent = filled
+        ? '站点令牌已由服务端自动填入，无需手动输入。'
+        : (state.tokenRequired
+          ? '本站点校验令牌，请向管理员获取后填入。'
+          : '当前站点不校验令牌，留空即可。');
+    }
+    if (typeof dlg.showModal === 'function') dlg.showModal();
+    else dlg.setAttribute('open', '');
+  }
+
+  function closeConfigGuide() {
+    const dlg = $('#dlg-config');
+    if (!dlg) return;
+    if (typeof dlg.close === 'function') dlg.close();
+    else dlg.removeAttribute('open');
   }
 
   function toast(msg, ms = 3200) {
@@ -252,6 +343,29 @@
   }
 
   $('#btn-demo').addEventListener('click', runDemo);
+
+  // 配置指引：summary 内的按钮不能触发折叠
+  $('#btn-config').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openConfigGuide();
+  });
+
+  $('#dlg-close').addEventListener('click', closeConfigGuide);
+  $('#dlg-cancel').addEventListener('click', closeConfigGuide);
+  $('#dlg-goto').addEventListener('click', () => {
+    closeConfigGuide();
+    $('#adv').open = true;
+    $('#api_key').focus();
+  });
+
+  // 点击弹窗外部遮罩关闭
+  $('#dlg-config').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeConfigGuide();
+  });
+
+  // 页面加载时拉取站点配置，预填令牌与默认模型
+  loadSiteConfig();
 
   // ------------------------------------------------------------ 执行页
 
