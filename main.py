@@ -1,7 +1,7 @@
 """
-BiyeToCode - 毕业论文代码生成系统
+BiyeToCode - 论文初稿生成系统
 
-将毕业论文Markdown或PDF转换为可运行的Python代码
+将研究方案/论文草稿（Markdown或PDF）转化为：论文初稿正文 + 可运行的验证代码
 """
 import asyncio
 import argparse
@@ -20,25 +20,25 @@ from app.utils.logger import logger
 def parse_args():
     """解析命令行参数"""
     parser = argparse.ArgumentParser(
-        description="BiyeToCode - 毕业论文代码生成系统",
+        description="BiyeToCode - 论文初稿生成系统",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  # 使用Markdown或PDF文件
-  python main.py --md thesis.pdf
-  
-  # 使用Markdown和数据文件
-  python main.py --md thesis.md --data ./data
-  
+  # 使用Markdown或PDF研究方案
+  python main.py --md proposal.pdf
+
+  # 使用Markdown方案和数据文件
+  python main.py --md proposal.md --data ./data
+
   # 指定输出目录
-  python main.py --md thesis.md --output ./my_output
+  python main.py --md proposal.md --output ./my_output
         """
     )
-    
+
     parser.add_argument(
         "--md", "-m",
         required=True,
-        help="论文文件路径（支持Markdown或PDF）"
+        help="研究方案/论文草稿文件路径（支持Markdown或PDF）"
     )
     
     parser.add_argument(
@@ -82,9 +82,9 @@ async def main():
     print("""
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║     🎓 BiyeToCode - 毕业论文代码生成系统 🎓                  ║
+║     🎓 BiyeToCode - 论文初稿生成系统 🎓                       ║
 ║                                                              ║
-║     将毕业论文Markdown转换为可运行的Python代码                 ║
+║     研究方案 → 论文正文(paper.md) + 验证代码(notebook)        ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
@@ -145,7 +145,7 @@ async def main():
 
     try:
         logger.info("开始处理...")
-        logger.info(f"论文文件: {args.md}")
+        logger.info(f"研究方案: {args.md}")
         if args.data:
             logger.info(f"数据目录: {args.data}")
         logger.info(f"输出目录: {args.output}")
@@ -159,19 +159,19 @@ async def main():
 
         # 打印结果
         print("\n" + "=" * 60)
-        print("✅ 论文复现完成!")
+        print("✅ 论文初稿生成完成!")
         print("=" * 60)
         print(f"\n📁 项目目录: {workflow.work_dir}")
-        print(f"📝 复现任务数: {len(result.task_results)}")
+        print(f"📝 支撑任务数: {len(result.task_results)}")
         print(f"📦 依赖库数: {len(result.requirements)}")
-        print(f"📄 报告章节: {len(result.report.sections)}")
+        print(f"📄 论文章节数: {len(result.report.sections)}")
 
         success_count = sum(1 for r in result.task_results if r.success)
         print(f"✅ 任务成功: {success_count}/{len(result.task_results)}")
 
         print("\n核心产出:")
-        print(f"  - notebook.ipynb  # 全部可复现代码")
-        print(f"  - report.md       # 复现报告（含图表与结果对比）")
+        print("  - paper.md        # 论文初稿正文（题目/摘要/引言/各章/结论）")
+        print("  - notebook.ipynb  # 全部验证代码（可重跑）")
 
         print(f"\n请查看 {workflow.work_dir}/README.md 了解详细信息")
         print("=" * 60)

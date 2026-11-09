@@ -2,9 +2,10 @@
 
 # 🎓 LunwenToCode
 
-### 论文 → 可复现代码 + 复现报告 · 多 Agent 自动复现系统
+### 研究方案 → 论文初稿 + 验证代码 · 多 Agent 学术写作系统
 
-让 LLM 把 **科研论文 / 毕业论文** 一键转成 **真实执行验证的 Jupyter Notebook** 与 **图文复现报告**。
+让 LLM 把 **研究方案 / 论文草稿** 一键转成 **论文初稿正文(paper.md)** 与 **真实执行验证的 Jupyter Notebook**。
+实验数值全部来自代码真实运行结果，为论文提供可信的实验支撑。
 
 <p>
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"/>
@@ -20,13 +21,13 @@
 
 ## ✨ 项目亮点
 
-> **不再"纸面生成代码"——所有代码都在真实 Jupyter 内核中执行验证，报告数值全部来自真实运行结果。**
+> **不再"纸面生成代码"——所有代码都在真实 Jupyter 内核中执行验证，论文中的实验数值全部来自真实运行结果。**
 
+- 📝 **论文初稿**：期刊/学位论文式结构（题目/摘要/引言/各章节/结论），以第一作者口吻撰写，模型章节基于方案素材润色，实验章节基于代码真实输出
 - 🔁 **执行闭环**：代码手通过 `execute_code` 工具在持久 Jupyter 内核中编写并运行代码，出错自动反思重试（最多 5 次）
-- 🧠 **多 Agent 协作**：解析 → 分析拆解 → 代码执行 → 报告撰写，求解与写作交错进行
-- 📝 **复现报告**：方法复现对照 / 逐任务结果（图 + 解读）/ 与论文结果对比 / 差异分析
-- 📓 **可复现资产**：全过程代码实时序列化为 `notebook.ipynb`（含输出、图片、错误），可直接重跑
-- 🖼️ **图片闭环**：工作目录图片 diff 追踪 → 报告强制插入 + 每图 3 行以上解读
+- 🧠 **多 Agent 协作**：解析 → 任务拆解 → 代码执行 → 论文写作，求解与写作交错进行
+- 📓 **验证代码资产**：全过程代码实时序列化为 `notebook.ipynb`（含输出、图片、错误），可直接重跑
+- 🖼️ **图片闭环**：工作目录图片 diff 追踪 → 论文强制插入 + 每图 3 行以上解读
 - 📊 **绘图工程化**：内核启动注入中文字体、统一配色与学术图表规范
 - 🤖 **三 LLM 解耦**：分析 / 代码 / 写作可分别配置最擅长的模型（写作默认复用分析模型）
 - 🌐 **双入口**：CLI 命令行 + Gradio Web（实时进度流式推送）
@@ -45,8 +46,8 @@ cp .env.example .env
 # 编辑 .env，填写各 LLM 的 API Key / Model / Base URL
 
 # 3. 命令行
-python main.py --md thesis.md
-python main.py --md thesis.pdf --data ./data --output ./output
+python main.py --md proposal.md
+python main.py --md proposal.pdf --data ./data --output ./output
 
 # 4. 或启动 Web
 python app.py
@@ -59,14 +60,14 @@ python app.py
 
 ## 1. 项目概述
 
-**LunwenToCode** 是基于大语言模型（LLM）的论文复现系统：输入论文（+可选数据），输出
+**LunwenToCode** 是基于大语言模型（LLM）的论文初稿生成系统：输入研究方案/论文草稿（+可选数据），输出
 
 | 产出 | 说明 |
 |------|------|
-| `notebook.ipynb` | 全部复现代码，按任务分节，含执行输出 / 图片 / 错误，可直接重跑 |
-| `report.md` | 图文复现报告：方法对照、逐任务结果、与论文结果对比、差异分析 |
-| `*.png` | 代码生成的全部图表 |
-| `analysis_result.json` | 论文分析与任务拆解结果 |
+| `paper.md` | 论文初稿正文：题目/摘要/关键词、引言、各章节（模型叙述+实验数值+图表）、结论 |
+| `notebook.ipynb` | 全部验证代码，按任务分节，含执行输出 / 图片 / 错误，可直接重跑 |
+| `*.png` | 论文图表（300dpi 学术规范） |
+| `analysis_result.json` | 方案分析与任务拆解结果 |
 | `requirements.txt` / `README.md` | 依赖与说明 |
 
 ## 2. 架构
@@ -74,33 +75,33 @@ python app.py
 ### 2.1 整体流程
 
 ```text
-论文 (MD/PDF/TXT) + 数据 (Excel/CSV, 可选)
+研究方案 (MD/PDF/TXT) + 数据 (Excel/CSV, 可选)
         │
         ▼
-   ParserAgent ──► AnalyzerAgent ──► 拆解复现任务（方案/对应章节/论文结果）
+   ParserAgent ──► AnalyzerAgent ──► 拆解论文支撑任务（方案/对应章节/预期结论）
                                         │
                   ┌─────────────────────▼─────────────────────┐
                   │  for each task:                            │
                   │    CoderAgent ── Jupyter内核真实执行        │
                   │      └─ 出错→反思→重试（≤5次）              │
-                  │    WriterAgent ── 撰写该任务报告章节        │
-                  │      └─ 强制插入新增图片+解读                │
+                  │    WriterAgent ── 以第一作者口吻撰写该章节  │
+                  │      └─ 强制插入实验图片+解读                │
                   └───────────────────────────────────────────┘
                                         │
                                         ▼
-              包装章节（摘要/概述/方法对照/结果对比/差异分析/结论）
+                     包装章节（题目摘要/引言/结论）
                                         │
                                         ▼
-                   notebook.ipynb + report.md + 图表 + README
+                   paper.md + notebook.ipynb + 图表 + README
 ```
 
 ### 2.2 三 LLM 架构
 
 | LLM | 用途 | 服务的 Agent |
 |-----|------|--------------|
-| **Analyzer LLM** | 论文解析、任务拆解 | `AnalyzerAgent`、`ParserAgent` |
+| **Analyzer LLM** | 方案解析、任务拆解 | `AnalyzerAgent`、`ParserAgent` |
 | **Coder LLM** | 代码生成与执行修复 | `CoderAgent` |
-| **Writer LLM** | 复现报告撰写（默认复用 Analyzer 配置） | `WriterAgent` |
+| **Writer LLM** | 论文正文撰写（默认复用 Analyzer 配置） | `WriterAgent` |
 
 均遵循 OpenAI 兼容协议。配置优先级：**CLI 参数 > 环境变量 > `.env` > 默认值**。
 
@@ -113,7 +114,7 @@ lunwentocode/
 │   ├── core/       # LLM / Workflow / 事件总线
 │   ├── tools/      # Jupyter解释器 / notebook序列化 / matplotlib注入
 │   ├── schemas/    # Pydantic 模型
-│   ├── config/     # 配置 + 报告章节模板(toml)
+│   ├── config/     # 配置 + 论文章节模板(toml)
 │   └── utils/      # 文件 / JSON / 日志
 ├── main.py         # CLI 入口
 ├── app.py          # Web 入口 (Gradio, 实时进度)
@@ -128,7 +129,7 @@ lunwentocode/
 | **上下文压缩** | Coder 对话历史累积，估算 token 超过上下文窗口 75% 时自动压缩（保留系统提示与最近消息） |
 | **图片闭环** | 解释器对工作目录做图片集合 diff 得到每任务新增图片；Writer 收到图片列表后强制 `![](文件名)` 插入并逐图解读 |
 | **绘图预注入** | 内核启动时注册中文字体、注入 `COLORS`/`FIG_*` 常量与 rcParams（300dpi、去上右边框），代码禁止重复设置 |
-| **报告模板** | `app/config/report_template.toml` 定义各章节写作模板，可自由定制 |
+| **论文模板** | `app/config/paper_template.toml` 定义各章节写作模板，可自由定制 |
 | **进度推送** | 事件总线（`app/core/events.py`）发布 system/code/report 事件，CLI 走日志、Gradio 流式展示，可扩展 Redis/WebSocket |
 
 ## 4. 配置
@@ -163,7 +164,7 @@ CODER_CONTEXT_WINDOW=128000
 
 ## 5. 扩展与定制
 
-- **定制报告章节**：编辑 `app/config/report_template.toml`，占位符在 Workflow 中替换
+- **定制论文章节**：编辑 `app/config/paper_template.toml`，占位符在 Workflow 中替换
 - **新增 Agent**：继承 `BaseAgent`，实现 `system_prompt` 与 `run`，注册到 Workflow
 - **切换执行环境**：`LocalCodeInterpreter` 可替换为云端沙箱（如 E2B），实现相同接口即可
 - **接入实时推送**：订阅 `EventBus`，转发到 Redis/WebSocket 即可实现多端进度展示

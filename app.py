@@ -1,7 +1,7 @@
 """
-LunwenToCode - 科研论文/毕业论文复现系统 (Web版)
+LunwenToCode - 论文初稿生成系统 (Web版)
 
-将论文转换为可执行的 Jupyter Notebook 与图文复现报告，
+将研究方案/论文草稿转换为论文初稿正文(paper.md)与可执行的 Jupyter Notebook 验证代码，
 进度实时流式推送到界面。
 """
 import asyncio
@@ -35,7 +35,7 @@ from app.config.settings import settings
 def run_process(md_file, data_files, api_key, analyzer_model, coder_model, writer_model, base_url):
     """同步生成器：后台线程执行工作流，实时 yield 进度事件"""
     if md_file is None:
-        yield "❌ 请上传论文文件（Markdown或PDF）", None, None, None
+        yield "❌ 请上传研究方案文件（Markdown或PDF）", None, None, None
         return
 
     final_api_key = api_key.strip() if api_key and api_key.strip() else settings.LLM_API_KEY
@@ -132,24 +132,24 @@ def run_process(md_file, data_files, api_key, analyzer_model, coder_model, write
 
     result = holder["result"]
     summary = (
-        f"✅ 论文复现完成!\n\n"
-        f"📝 复现任务: {sum(1 for r in result.task_results if r.success)}/"
+        f"✅ 论文初稿生成完成!\n\n"
+        f"📝 支撑任务: {sum(1 for r in result.task_results if r.success)}/"
         f"{len(result.task_results)} 成功\n"
-        f"📄 报告章节: {len(result.report.sections)}\n"
+        f"📄 论文章节: {len(result.report.sections)}\n"
         f"📦 依赖库: {len(result.requirements)}\n\n"
-        f"核心产出: notebook.ipynb（可复现代码）+ report.md（复现报告）"
+        f"核心产出: paper.md（论文初稿正文）+ notebook.ipynb（验证代码）"
     )
     yield "\n".join(progress_lines[-200:]) + f"\n\n{summary}", \
         result.report.full_report, holder["zip_path"], \
         "\n".join(result.requirements) if result.requirements else "无额外依赖"
 
 
-with gr.Blocks(title="LunwenToCode - 论文复现系统", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="LunwenToCode - 论文初稿生成系统", theme=gr.themes.Soft()) as demo:
     gr.Markdown("""
-    # 🎓 LunwenToCode - 论文复现系统
+    # 🎓 LunwenToCode - 论文初稿生成系统
 
-    将论文（Markdown/PDF）转换为 **可执行的 Jupyter Notebook** 与 **图文复现报告**。
-    代码在真实 Jupyter 内核中执行验证，报告中所有数值均来自真实运行结果。
+    将研究方案/论文草稿（Markdown/PDF）转化为 **论文初稿正文(paper.md)** 与 **可执行的 Jupyter Notebook 验证代码**。
+    代码在真实 Jupyter 内核中执行验证，论文中所有实验数值均来自真实运行结果。
     （PDF 建议先用 [Mineru](https://mineru.net/) 转为 Markdown）
     """)
 
@@ -158,7 +158,7 @@ with gr.Blocks(title="LunwenToCode - 论文复现系统", theme=gr.themes.Soft()
             gr.Markdown("### 📤 输入")
 
             md_input = gr.File(
-                label="上传论文文件",
+                label="上传研究方案/论文草稿文件",
                 file_types=[".md", ".pdf", ".txt"],
                 type="filepath",
             )
@@ -181,7 +181,7 @@ with gr.Blocks(title="LunwenToCode - 论文复现系统", theme=gr.themes.Soft()
                     placeholder="例如: https://api.openai.com/v1",
                 )
                 analyzer_model_input = gr.Textbox(
-                    label="分析模型（论文分析与报告写作）",
+                    label="分析模型（方案分析与论文写作）",
                     placeholder="默认: gpt-4o",
                     value="",
                 )
@@ -191,12 +191,12 @@ with gr.Blocks(title="LunwenToCode - 论文复现系统", theme=gr.themes.Soft()
                     value="",
                 )
                 writer_model_input = gr.Textbox(
-                    label="报告写作模型（留空则与分析模型一致）",
+                    label="论文写作模型（留空则与分析模型一致）",
                     placeholder="默认与分析模型一致",
                     value="",
                 )
 
-            submit_btn = gr.Button("🚀 开始复现", variant="primary", size="lg")
+            submit_btn = gr.Button("🚀 生成论文初稿", variant="primary", size="lg")
 
         with gr.Column(scale=2):
             gr.Markdown("### 📥 输出")
@@ -208,8 +208,8 @@ with gr.Blocks(title="LunwenToCode - 论文复现系统", theme=gr.themes.Soft()
                 show_copy_button=True,
             )
 
-            with gr.Accordion("📄 复现报告（完成后展示）", open=False):
-                report_md = gr.Markdown(label="复现报告")
+            with gr.Accordion("📄 论文初稿（完成后展示）", open=False):
+                report_md = gr.Markdown(label="论文初稿")
 
             with gr.Row():
                 download_file = gr.File(label="📦 下载完整项目包")
@@ -224,11 +224,11 @@ with gr.Blocks(title="LunwenToCode - 论文复现系统", theme=gr.themes.Soft()
 
     gr.Markdown("""
     ### 📖 使用说明
-    1. 上传论文文件（PDF 建议先用 [Mineru](https://mineru.net/) 转为 Markdown）
+    1. 上传研究方案/论文草稿文件（PDF 建议先用 [Mineru](https://mineru.net/) 转为 Markdown）
     2. 如有数据文件，可一并上传（Excel/CSV）
     3. 填写 API Key（或预先设置环境变量）
-    4. 点击"开始复现"，实时查看执行进度（过程较慢请耐心等待）
-    5. 完成后查看复现报告并下载完整项目包（notebook + 报告 + 图表）
+    4. 点击"生成论文初稿"，实时查看执行进度（过程较慢请耐心等待）
+    5. 完成后查看论文正文并下载完整项目包（paper.md + notebook + 图表）
     """)
 
 
