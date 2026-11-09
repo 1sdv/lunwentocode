@@ -100,17 +100,17 @@ async def main():
     if not coder_api_key:
         logger.error("请设置代码LLM API Key（环境变量 CODER_LLM_API_KEY 或 LLM_API_KEY）")
         sys.exit(1)
-    
+
     # 检查输入文件
     if not os.path.exists(args.md):
         logger.error(f"论文文件不存在: {args.md}")
         sys.exit(1)
-    
+
     # 检查数据目录
     if args.data and not os.path.exists(args.data):
         logger.warning(f"数据目录不存在: {args.data}")
         args.data = None
-    
+
     # 创建分析LLM实例（用于论文分析）
     analyzer_llm = LLM(
         api_key=analyzer_api_key,
@@ -118,7 +118,7 @@ async def main():
         base_url=settings.ANALYZER_LLM_BASE_URL or settings.LLM_BASE_URL
     )
     logger.info(f"分析LLM: {analyzer_llm.model}")
-    
+
     # 创建代码LLM实例（用于代码生成和修复）
     coder_llm = LLM(
         api_key=coder_api_key,
@@ -126,35 +126,53 @@ async def main():
         base_url=settings.CODER_LLM_BASE_URL or settings.LLM_BASE_URL
     )
     logger.info(f"代码LLM: {coder_llm.model}")
-    
-    # 创建工作流（传入两个LLM）
-    workflow = ThesisToCodeWorkflow(analyzer_llm=analyzer_llm, coder_llm=coder_llm)
-    
+
+    # 创建写作LLM实例（用于复现报告，默认复用分析LLM配置）
+    writer_api_key = settings.WRITER_LLM_API_KEY or analyzer_api_key
+    writer_llm = LLM(
+        api_key=writer_api_key,
+        model=settings.WRITER_LLM_MODEL or settings.ANALYZER_LLM_MODEL or settings.LLM_MODEL,
+        base_url=settings.WRITER_LLM_BASE_URL or settings.ANALYZER_LLM_BASE_URL or settings.LLM_BASE_URL
+    )
+    logger.info(f"写作LLM: {writer_llm.model}")
+
+    # 创建工作流（传入LLM，事件直接走日志）
+    workflow = ThesisToCodeWorkflow(
+        analyzer_llm=analyzer_llm,
+        coder_llm=coder_llm,
+        writer_llm=writer_llm,
+    )
+
     try:
         logger.info("开始处理...")
         logger.info(f"论文文件: {args.md}")
         if args.data:
             logger.info(f"数据目录: {args.data}")
         logger.info(f"输出目录: {args.output}")
-        
+
         # 执行工作流
         result = await workflow.run(
             md_path=args.md,
             data_dir=args.data,
             output_dir=args.output
         )
-        
+
         # 打印结果
         print("\n" + "=" * 60)
-        print("✅ 代码生成完成!")
+        print("✅ 论文复现完成!")
         print("=" * 60)
         print(f"\n📁 项目目录: {workflow.work_dir}")
-        print(f"📄 生成文件数: {len(result.files)}")
+        print(f"📝 复现任务数: {len(result.task_results)}")
         print(f"📦 依赖库数: {len(result.requirements)}")
-        print("\n生成的文件:")
-        for file_name in result.files.keys():
-            print(f"  - {file_name}")
-        
+        print(f"📄 报告章节: {len(result.report.sections)}")
+
+        success_count = sum(1 for r in result.task_results if r.success)
+        print(f"✅ 任务成功: {success_count}/{len(result.task_results)}")
+
+        print("\n核心产出:")
+        print(f"  - notebook.ipynb  # 全部可复现代码")
+        print(f"  - report.md       # 复现报告（含图表与结果对比）")
+
         print(f"\n请查看 {workflow.work_dir}/README.md 了解详细信息")
         print("=" * 60)
         
