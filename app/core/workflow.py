@@ -1,11 +1,12 @@
 """
-工作流引擎 - 论文复现：解析 → 分析 → 逐任务执行代码 → 交错撰写报告 → 组装输出
+工作流引擎 - 论文初稿生成：解析研究方案 → 拆解支撑任务 → 逐任务执行代码 → 交错撰写论文正文 → 组装输出
 
 参考 MathModelAgent 的 MathModelWorkFlow：
+- 定位：研究生撰写自己的论文初稿，代码用于实验验证
 - 求解与写作交错：每个任务由代码手在 Jupyter 内核中真实执行后，
-  写作手立即撰写该任务对应的报告章节（携带代码输出与新增图片）
-- 全部任务完成后撰写包装章节（摘要/概述/方法对照/结果对比/差异分析/结论）
-- 最终产出：report.md + notebook.ipynb（可复现）+ requirements.txt + README.md
+  写作手立即以第一作者口吻撰写该任务对应的论文章节（携带代码输出与新增图片）
+- 全部任务完成后撰写包装章节（题目摘要/引言/结论）
+- 最终产出：paper.md（论文正文）+ notebook.ipynb（验证代码）+ requirements.txt + README.md
 """
 import json
 import os
@@ -39,20 +40,20 @@ from app.utils.logger import logger
 from app.utils.json_utils import load_json_from_response
 from app.config.settings import settings
 
-REPORT_TEMPLATE_PATH = os.path.join(
+PAPER_TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "app", "config", "report_template.toml",
+    "app", "config", "paper_template.toml",
 )
 
-# 报告章节拼接顺序（任务章节动态插入中间）
-WRAPPER_SECTIONS = ["firstPage", "overview", "method_mapping"]
-TAIL_SECTIONS = ["comparison", "issues", "conclusion"]
+# 论文章节拼接顺序（任务章节动态插入中间）
+WRAPPER_SECTIONS = ["firstPage", "introduction"]
+TAIL_SECTIONS = ["conclusion"]
 
 DEFAULT_LIBRARIES = ["pandas", "numpy", "matplotlib"]
 
 
 class ThesisToCodeWorkflow:
-    """论文复现工作流：论文 → 可执行代码(notebook) + 复现报告"""
+    """论文初稿工作流：研究方案 → 论文正文(paper.md) + 验证代码(notebook.ipynb)"""
 
     def __init__(
         self,
@@ -73,6 +74,8 @@ class ThesisToCodeWorkflow:
         # 工作状态
         self.task_id: str = ""
         self.work_dir: str = ""
+        # 研究方案原文（供写作手撰写各章节时引用素材）
+        self._source_markdown: str = ""
 
     # ------------------------------------------------------------------ 主流程
 
@@ -91,8 +94,9 @@ class ThesisToCodeWorkflow:
         code_interpreter: Optional[LocalCodeInterpreter] = None
         try:
             # Phase 1: 读取输入
-            self._publish(EVENT_SYSTEM, "Phase 1/6: 读取论文")
+            self._publish(EVENT_SYSTEM, "Phase 1/6: 读取研究方案")
             parsed_content, source_ext = await self._load_input_content(md_path)
+            self._source_markdown = parsed_content.raw_markdown or ""
             if source_ext == ".pdf":
                 shutil.copy2(md_path, os.path.join(self.work_dir, "thesis.pdf"))
                 save_code_file(self.work_dir, "thesis.md", parsed_content.raw_markdown or "")
@@ -111,15 +115,15 @@ class ThesisToCodeWorkflow:
                 self._publish(EVENT_SYSTEM, f"发现 {len(data_files)} 个数据文件")
 
             # Phase 3: 内容分析
-            self._publish(EVENT_SYSTEM, "Phase 3/6: 分析论文，拆解复现任务")
+            self._publish(EVENT_SYSTEM, "Phase 3/6: 分析研究方案，拆解论文支撑任务")
             analysis_result = await self.analyzer_agent.run(parsed_content, data_files)
             self._save_analysis_result(analysis_result)
             if not analysis_result.code_tasks:
-                raise ValueError("分析阶段未生成任何复现任务，请检查论文内容或更换分析模型")
+                raise ValueError("分析阶段未生成任何支撑任务，请检查方案内容或更换分析模型")
             self._publish(
                 EVENT_SYSTEM,
-                f"分析完成: 论文类型={analysis_result.thesis_type.value}, "
-                f"共 {len(analysis_result.code_tasks)} 个复现任务",
+                f"分析完成: 研究类型={analysis_result.thesis_type.value}, "
+                f"共 {len(analysis_result.code_tasks)} 个支撑任务",
             )
 
             # Phase 4: 初始化执行环境
@@ -141,10 +145,10 @@ class ThesisToCodeWorkflow:
                 max_retries=settings.MAX_CODE_RETRIES,
             )
             writer_agent = WriterAgent(self.writer_llm, event_bus=self.event_bus)
-            templates = self._load_report_templates()
+            templates = self._load_paper_templates()
             context = self._build_coder_context(analysis_result, data_files)
 
-            # Phase 5: 逐任务交错执行：代码 → 报告章节
+            # Phase 5: 逐任务交错执行：代码 → 论文章节
             sorted_tasks = sorted(analysis_result.code_tasks, key=lambda t: t.priority)
             task_results: List[CoderExecutionResult] = []
             report = ReportOutput()
@@ -153,7 +157,7 @@ class ThesisToCodeWorkflow:
             for i, task in enumerate(sorted_tasks, 1):
                 self._publish(
                     EVENT_SYSTEM,
-                    f"Phase 5/6: 复现任务 {i}/{len(sorted_tasks)}: {task.title}",
+                    f"Phase 5/6: 支撑任务 {i}/{len(sorted_tasks)}: {task.title}",
                 )
                 result = await coder_agent.run(task, context, data_files)
                 task_results.append(result)
@@ -167,9 +171,10 @@ class ThesisToCodeWorkflow:
                     available_images=result.created_images,
                 )
                 report.sections[section_key] = section_content
+                self._save_intermediate_state(report, task_results, task_section_keys)
 
             # Phase 6: 撰写包装章节并组装输出
-            self._publish(EVENT_SYSTEM, "Phase 6/6: 撰写报告包装章节")
+            self._publish(EVENT_SYSTEM, "Phase 6/6: 撰写论文摘要、引言与结论")
             thesis_info = self._build_thesis_info(parsed_content, analysis_result)
             tasks_overview = self._build_tasks_overview(sorted_tasks)
             comparison_info = self._build_comparison_info(sorted_tasks, task_results)
@@ -179,7 +184,8 @@ class ThesisToCodeWorkflow:
                     templates.get(key, ""),
                     thesis_info=thesis_info,
                     tasks_overview=tasks_overview,
-                    thesis_title=parsed_content.title or "论文复现",
+                    comparison_info=comparison_info,
+                    thesis_title=parsed_content.title or "论文初稿",
                 )
                 report.sections[key] = await writer_agent.run(prompt)
 
@@ -189,6 +195,7 @@ class ThesisToCodeWorkflow:
                     thesis_info=thesis_info,
                     tasks_overview=tasks_overview,
                     comparison_info=comparison_info,
+                    section_number=str(len(sorted_tasks) + 2),
                 )
                 report.sections[key] = await writer_agent.run(prompt)
 
@@ -247,15 +254,15 @@ class ThesisToCodeWorkflow:
         return await self._parse_markdown_content(markdown_content)
 
     async def _parse_markdown_content(self, markdown_content: str) -> ParsedContent:
-        prompt = f"""请分析以下Markdown文档，提取论文的结构化信息。
+        prompt = f"""请分析以下研究方案/论文初稿内容，提取结构化信息。
 
 文档内容:
 {markdown_content[:15000]}
 
 请以JSON格式返回，包含以下字段:
 {{
-    "title": "论文标题",
-    "abstract": "摘要内容",
+    "title": "论文标题（若原文未提供，请根据内容拟定一个规范的学术论文标题，禁止输出'未提供'或解释性文字）",
+    "abstract": "摘要内容（若无则概括核心研究内容）",
     "keywords": ["关键词1", "关键词2"],
     "chapters": {{
         "章节名1": "章节内容摘要",
@@ -289,9 +296,9 @@ class ThesisToCodeWorkflow:
     # ------------------------------------------------------------------ 提示词组装
 
     @staticmethod
-    def _load_report_templates() -> dict:
+    def _load_paper_templates() -> dict:
         try:
-            with open(REPORT_TEMPLATE_PATH, "rb") as f:
+            with open(PAPER_TEMPLATE_PATH, "rb") as f:
                 raw = tomllib.load(f)
             # 模板格式为 [section] + 同名 key，展平为 {section: 模板文本}
             return {
@@ -299,7 +306,7 @@ class ThesisToCodeWorkflow:
                 for key, value in raw.items()
             }
         except Exception as e:
-            logger.error(f"加载报告模板失败: {e}")
+            logger.error(f"加载论文模板失败: {e}")
             return {}
 
     @staticmethod
@@ -334,10 +341,11 @@ class ThesisToCodeWorkflow:
         else:
             context += "无额外数据文件，需要根据论文描述模拟或生成示例数据。\n"
 
-        context += "\n## 复现任务列表\n"
+        context += "\n## 论文支撑任务列表\n"
         for t in analysis_result.code_tasks:
             context += f"\n### {t.title} (优先级{t.priority})\n"
             context += f"- 类型: {t.task_type.value}\n"
+            context += f"- 对应章节: {t.paper_section or '未指定'}\n"
             context += f"- 描述: {t.description}\n"
         return context
 
@@ -353,13 +361,14 @@ class ThesisToCodeWorkflow:
         code_output = result.code_output[:4000] if result.code_output else "（无代码输出）"
         coder_summary = result.code_summary[:3000] if result.code_summary else "（无总结）"
         if not result.success:
-            coder_summary = f"⚠️ 任务执行失败：{result.error_message}\n\n{coder_summary}"
+            coder_summary = f"⚠️ 实验执行失败：{result.error_message}\n\n{coder_summary}"
 
+        section_title = f"{index + 1} {task.paper_section or task.title}"
         return self._render_template(
             template,
-            section_title=f"{index}. 复现任务{index}/{total}：{task.title}",
-            paper_section=task.paper_section or "未指定",
-            paper_results=task.paper_results or "论文未给出具体数值",
+            section_title=section_title,
+            paper_section=task.paper_section or task.title,
+            source_excerpt=self._source_markdown[:6000] or "（无原文素材）",
             coder_summary=coder_summary,
             code_output=code_output,
             images_prompt="（图片列表见提示词末尾）",
@@ -369,7 +378,7 @@ class ThesisToCodeWorkflow:
     def _build_thesis_info(parsed_content: ParsedContent, analysis: AnalysisResult) -> str:
         return (
             f"论文标题: {parsed_content.title or '未知'}\n"
-            f"论文类型: {analysis.thesis_type.value}\n"
+            f"研究类型: {analysis.thesis_type.value}\n"
             f"研究方法: {analysis.research_method}\n"
             f"摘要: {parsed_content.abstract[:1000]}\n"
             f"关键词: {', '.join(parsed_content.keywords)}\n"
@@ -384,7 +393,7 @@ class ThesisToCodeWorkflow:
             lines.append(
                 f"任务{i}: {t.title} | 类型: {t.task_type.value} | "
                 f"对应章节: {t.paper_section or '未指定'} | 描述: {t.description[:200]} | "
-                f"复现方案: {t.plan[:300] if t.plan else '无'}"
+                f"实现方案: {t.plan[:300] if t.plan else '无'}"
             )
         return "\n".join(lines)
 
@@ -396,14 +405,31 @@ class ThesisToCodeWorkflow:
         for i, (t, r) in enumerate(zip(tasks, results), 1):
             status = "成功" if r.success else f"失败({r.error_message[:100] if r.error_message else '未知'})"
             lines.append(
-                f"任务{i}: {t.title} | 执行状态: {status} | "
-                f"论文结果: {t.paper_results or '未给出'} | "
-                f"复现结果摘要: {r.code_summary[:800] if r.code_summary else '无'} | "
+                f"任务{i}: {t.title}（章节: {t.paper_section or '未指定'}） | 执行状态: {status} | "
+                f"实验结果摘要: {r.code_summary[:800] if r.code_summary else '无'} | "
                 f"生成图片: {', '.join(r.created_images) if r.created_images else '无'}"
             )
         return "\n".join(lines)
 
     # ------------------------------------------------------------------ 输出保存
+
+    def _save_intermediate_state(
+        self,
+        report: ReportOutput,
+        task_results: List[CoderExecutionResult],
+        task_section_keys: List[str],
+    ) -> None:
+        """每个任务完成后落盘中间状态，便于崩溃后恢复写作阶段"""
+        state = {
+            "task_section_keys": task_section_keys,
+            "sections": report.sections,
+            "task_results": [r.model_dump() for r in task_results],
+        }
+        save_code_file(
+            self.work_dir,
+            "_state.json",
+            json.dumps(state, ensure_ascii=False, indent=2),
+        )
 
     def _save_analysis_result(self, result: AnalysisResult) -> None:
         analysis_data = {
@@ -439,28 +465,28 @@ class ThesisToCodeWorkflow:
         tasks: List[CodeTask],
         results: List[CoderExecutionResult],
     ) -> str:
-        readme = f"""# {parsed_content.title or '论文复现'} - 复现项目
+        readme = f"""# {parsed_content.title or '论文初稿'} - 论文初稿项目
 
 ## 项目说明
 
-本项目是根据论文自动复现生成的：**notebook.ipynb** 包含全部可复现代码（含执行输出与图表），
-**report.md** 是图文并茂的复现报告（复现结果 vs 论文结果对照）。
+本项目基于研究方案自动生成：**paper.md** 是论文初稿正文（题目/摘要/引言/各章节/结论，
+实验数值均来自代码真实执行），**notebook.ipynb** 包含全部验证代码（含执行输出与图表）。
 
 ### 论文信息
 - **标题**: {parsed_content.title}
-- **类型**: {analysis.thesis_type.value}
+- **研究类型**: {analysis.thesis_type.value}
 - **研究方法**: {analysis.research_method}
 
 ## 文件结构
 
 ```
 {self.task_id}/
-├── notebook.ipynb       # 全部复现代码（Jupyter，可直接重跑）
-├── report.md            # 复现报告（方法对照/结果对比/图表解读）
+├── paper.md             # 论文初稿正文（期刊/学位论文式）
+├── notebook.ipynb       # 全部验证代码（Jupyter，可直接重跑）
 ├── requirements.txt     # 依赖列表
-├── thesis.md            # 论文原文（Markdown）
-├── analysis_result.json # 论文分析与任务拆解结果
-├── *.png                # 代码生成的图表
+├── thesis.md            # 研究方案原文（Markdown）
+├── analysis_result.json # 方案分析与任务拆解结果
+├── *.png                # 论文图表
 └── README.md            # 本文件
 ```
 
@@ -471,12 +497,12 @@ pip install -r requirements.txt
 jupyter notebook notebook.ipynb
 ```
 
-## 复现任务清单
+## 支撑任务清单（与论文章节对应）
 
 """
         for i, (t, r) in enumerate(zip(tasks, results), 1):
             status = "✅ 成功" if r.success else "❌ 失败"
-            readme += f"{i}. {t.title} {status}"
+            readme += f"{i}. {t.paper_section or t.title}（{t.title}）{status}"
             if r.created_images:
                 readme += f"（图表: {', '.join(r.created_images)}）"
             readme += "\n"
@@ -485,7 +511,8 @@ jupyter notebook notebook.ipynb
 ## 注意事项
 
 1. 代码由 AI 自动生成并真实执行验证，如数据文件不同请调整读取路径
-2. report.md 中的所有数值均来自代码真实输出
+2. paper.md 中的所有实验数值均来自代码真实输出
+3. 论文初稿不含参考文献，请根据实际引用情况自行补充
 
 ---
 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · 任务ID: {self.task_id}
@@ -494,14 +521,14 @@ jupyter notebook notebook.ipynb
 
     def _save_project_files(self, output: ProjectOutput) -> None:
         self._relocate_report_images(output.report.full_report)
-        save_code_file(self.work_dir, "report.md", output.report.full_report)
+        save_code_file(self.work_dir, "paper.md", output.report.full_report)
         requirements_content = "\n".join(output.requirements)
         save_code_file(self.work_dir, "requirements.txt", requirements_content)
         save_code_file(self.work_dir, "README.md", output.readme)
         logger.info(f"项目文件已保存到: {self.work_dir}")
 
     def _relocate_report_images(self, report_content: str) -> None:
-        """报告以裸文件名引用图片；若图片被代码移入子目录，复制回工作目录根以保证链接有效"""
+        """论文以裸文件名引用图片；若图片被代码移入子目录，复制回工作目录根以保证链接有效"""
         import re as _re
 
         referenced = set(_re.findall(r"!\[[^\]]*\]\(([^)]+)\)", report_content))

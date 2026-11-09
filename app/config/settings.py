@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     CODER_LLM_MODEL: str = "intern-latest"
     CODER_LLM_BASE_URL: Optional[str] = None
 
-    # 写作LLM配置（用于复现报告撰写，留空则复用分析LLM）
+    # 写作LLM配置（用于论文正文撰写，留空则复用分析LLM）
     WRITER_LLM_API_KEY: str = ""
     WRITER_LLM_MODEL: str = ""
     WRITER_LLM_BASE_URL: Optional[str] = None

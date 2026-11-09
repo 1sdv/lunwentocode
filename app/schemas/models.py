@@ -62,14 +62,14 @@ class ParsedContent(BaseModel):
 
 
 class CodeTask(BaseModel):
-    """代码任务（复现任务）"""
+    """论文支撑任务"""
     task_id: str
     task_type: CodeTaskType
     title: str
     description: str
-    plan: str = ""                       # 复现方案：方法、步骤、关键参数
-    paper_section: str = ""              # 对应的论文章节
-    paper_results: str = ""              # 论文中报告的结果（用于复现对比）
+    plan: str = ""                       # 实现方案：方法、步骤、关键参数
+    paper_section: str = ""              # 对应的论文章节标题
+    paper_results: str = ""              # 预期结论或参考数值
     requirements: List[str] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)  # 依赖的其他任务ID
     input_data: Optional[str] = None  # 输入数据描述
@@ -101,7 +101,7 @@ class CoderExecutionResult(BaseModel):
 
 
 class ReportOutput(BaseModel):
-    """复现报告"""
+    """论文正文（paper.md）"""
     sections: Dict[str, str] = Field(default_factory=dict)  # section_key: 内容
     sequence: List[str] = Field(default_factory=list)       # 章节拼接顺序
     full_report: str = ""

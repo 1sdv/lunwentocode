@@ -1,5 +1,5 @@
 """
-代码手 Agent - 在 Jupyter 内核中生成并真实执行代码，完成论文复现任务
+代码手 Agent - 在 Jupyter 内核中生成并真实执行代码，为论文提供实验验证结果
 
 参考 MathModelAgent 的 CoderAgent：
 - execute_code 工具循环：LLM 调用工具 → 内核执行 → 结果回填 → 继续或结束
@@ -66,7 +66,9 @@ class CoderAgent:
 
     @property
     def system_prompt(self) -> str:
-        return """你是论文复现代码专家，在 Jupyter 内核中编写并执行 Python 代码来复现论文中的方法与实验。
+        return """你是论文实验代码专家，为研究生撰写学术论文提供代码验证与实验结果。
+你在 Jupyter 内核中编写并执行 Python 代码，实现论文初稿中的模型/算法并产出实验数据与图表，
+这些结果将直接写入论文正文，因此数值必须真实可靠。
 
 # 环境说明
 - 内核启动时已注入：CJK_FONT、COLORS、DEFAULT_COLORS、FIG_SINGLE、FIG_DOUBLE、FIG_WIDE、FIG_SQUARE 以及 matplotlib 字体与样式配置
@@ -76,16 +78,17 @@ class CoderAgent:
 - Excel 用 pd.read_excel()，CSV 先尝试 utf-8 再 gbk
 
 # 代码规范
-1. 分步执行：每次 execute_code 只做一个步骤（读取数据/建模/绘图），便于定位错误
+1. 分步执行：每次 execute_code 只做一个步骤（数据准备/建模/求解/绘图），便于定位错误
 2. 向量化优先，避免低效循环
-3. 关键参数必须有来源说明（数据统计/论文给定/网格搜索三选一），在注释或 print 中说明
-4. 所有图片保存为 PNG（dpi=300），文件名含序号与含义（如 fig1_data_distribution.png）
-5. 每张图保存后必须用 print() 输出该图的关键数据特征（趋势、最值、相关系数、指标值等），
-   因为你无法看到图片，后续报告写作完全依赖这些文本输出
-6. 每个任务完成后输出一段【本任务结果汇总】：核心方法、关键指标数值、生成的图片文件、核心结论
+3. 论文方案中给定的参数严格按方案取值；方案未给的参数自行设定合理值，
+   并在注释或 print 中注明"自行设定"及其依据
+4. 所有图片保存为 PNG（dpi=300），文件名含序号与含义（如 fig1_rate_vs_rho.png）
+5. 每张图保存后必须用 print() 输出该图的关键数据特征（趋势、最值、拐点、指标值等），
+   因为你无法看到图片，论文写作完全依赖这些文本输出
+6. 每个任务完成后输出一段【本任务结果汇总】：核心方法、关键指标数值、生成的图片文件、主要实验结论
 
 # 可视化规范（学术标准）
-- 图表内不加标题（标题由报告 caption 提供）
+- 图表内不加标题（标题由论文 caption 提供）
 - 使用统一 COLORS 配色；折线图必要时用 fill_between 添加置信带
 - 标注关键统计量（r, p, R², MAE 等）；图例 frameon=False
 - 禁止 3D 图、饼图；分布比较用箱线图/小提琴图；分类对比用水平条形图
@@ -104,7 +107,7 @@ class CoderAgent:
         context: str,
         data_files: Optional[List[DataFileInfo]] = None,
     ) -> CoderExecutionResult:
-        """执行单个复现任务，返回执行结果供写作手使用"""
+        """执行单个论文支撑任务，返回执行结果供写作手使用"""
         section = f"任务{task.priority + 1}：{task.title}" if task.title else task.task_id
         self.code_interpreter.add_section(section)
         self._publish(EVENT_CODE, f"代码手开始执行: {section}")
@@ -230,7 +233,7 @@ class CoderAgent:
     # ------------------------------------------------------------------ 提示词
 
     def _build_task_prompt(self, task: CodeTask, context: str) -> str:
-        prompt = f"""请完成以下论文复现任务。
+        prompt = f"""请完成以下论文支撑任务（你的代码实验结果将写入论文正文）。
 
 {context}
 
@@ -238,15 +241,15 @@ class CoderAgent:
 - 标题: {task.title}
 - 类型: {task.task_type.value}
 - 任务描述: {task.description}
-- 复现方案: {task.plan or '无，请根据任务描述自行设计'}
+- 实现方案: {task.plan or '无，请根据任务描述自行设计'}
 - 对应论文章节: {task.paper_section or '未指定'}
-- 论文报告的结果（复现时用于对比）: {task.paper_results or '论文未给出具体数值'}
+- 预期结论/参考数值: {task.paper_results or '方案未给出具体数值'}
 - 具体要求: {task.requirements}
 - 输入数据: {task.input_data or '见数据文件'}
 - 期望输出: {task.expected_output or '代码执行结果与图表'}
 
 执行要求:
-1. 严格按复现方案逐步实现，使用 execute_code 工具执行代码
+1. 严格按实现方案逐步实现，使用 execute_code 工具执行代码
 2. 每张图保存后 print 关键数据特征
 3. 任务完成后输出【本任务结果汇总】（不再调用工具）"""
         return prompt
