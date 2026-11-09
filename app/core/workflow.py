@@ -1,211 +1,252 @@
 """
-工作流管理 - 协调各Agent完成论文代码生成
+工作流引擎 - 论文复现：解析 → 分析 → 逐任务执行代码 → 交错撰写报告 → 组装输出
+
+参考 MathModelAgent 的 MathModelWorkFlow：
+- 求解与写作交错：每个任务由代码手在 Jupyter 内核中真实执行后，
+  写作手立即撰写该任务对应的报告章节（携带代码输出与新增图片）
+- 全部任务完成后撰写包装章节（摘要/概述/方法对照/结果对比/差异分析/结论）
+- 最终产出：report.md + notebook.ipynb（可复现）+ requirements.txt + README.md
 """
+import json
 import os
 import shutil
 import uuid
 from datetime import datetime
-from typing import List, Optional, Tuple
 from pathlib import Path
+from typing import List, Optional, Tuple
 
-from app.agents import AnalyzerAgent, CoderAgent, ValidatorAgent
-from app.agents.parser_agent import ParserAgent
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib
+
+from app.agents import AnalyzerAgent, CoderAgent, ParserAgent, WriterAgent
+from app.core.events import EVENT_SYSTEM, EventBus
 from app.core.llm import LLM
 from app.schemas.models import (
-    ParsedContent,
     AnalysisResult,
-    GeneratedCode,
-    ValidationResult,
+    CodeTask,
+    CoderExecutionResult,
+    DataFileInfo,
+    ParsedContent,
     ProjectOutput,
-    DataFileInfo
+    ReportOutput,
 )
-from app.utils.file_utils import scan_data_files, create_work_dir, save_code_file
+from app.tools.local_interpreter import LocalCodeInterpreter
+from app.tools.notebook_serializer import NotebookSerializer
+from app.utils.file_utils import create_work_dir, save_code_file, scan_data_files
 from app.utils.logger import logger
 from app.utils.json_utils import load_json_from_response
 from app.config.settings import settings
 
+REPORT_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "app", "config", "report_template.toml",
+)
+
+# 报告章节拼接顺序（任务章节动态插入中间）
+WRAPPER_SECTIONS = ["firstPage", "overview", "method_mapping"]
+TAIL_SECTIONS = ["comparison", "issues", "conclusion"]
+
+DEFAULT_LIBRARIES = ["pandas", "numpy", "matplotlib"]
+
 
 class ThesisToCodeWorkflow:
-    """毕业论文代码生成工作流"""
-    
+    """论文复现工作流：论文 → 可执行代码(notebook) + 复现报告"""
+
     def __init__(
-        self, 
+        self,
         analyzer_llm: Optional[LLM] = None,
-        coder_llm: Optional[LLM] = None
+        coder_llm: Optional[LLM] = None,
+        writer_llm: Optional[LLM] = None,
+        event_bus: Optional[EventBus] = None,
     ):
-        """
-        初始化工作流
-        
-        Args:
-            analyzer_llm: 分析LLM实例，用于论文分析
-            coder_llm: 代码LLM实例，用于代码生成和修复
-        """
         self.analyzer_llm = analyzer_llm or LLM()
         self.coder_llm = coder_llm or LLM()
-        
-        # 初始化各Agent，使用不同的LLM
-        # AnalyzerAgent使用分析LLM
+        # 写作手默认复用分析 LLM（分析模型通常擅长写作）
+        self.writer_llm = writer_llm or self.analyzer_llm
+        self.event_bus = event_bus or EventBus()
+
         self.analyzer_agent = AnalyzerAgent(self.analyzer_llm)
-        # ParserAgent主要处理PDF转Markdown
         self.parser_agent = ParserAgent(self.analyzer_llm)
-        # CoderAgent和ValidatorAgent使用代码LLM
-        self.coder_agent = CoderAgent(self.coder_llm)
-        self.validator_agent = ValidatorAgent(self.coder_llm)
-        
+
         # 工作状态
         self.task_id: str = ""
         self.work_dir: str = ""
-        
+
+    # ------------------------------------------------------------------ 主流程
+
     async def run(
         self,
         md_path: str,
         data_dir: Optional[str] = None,
-        output_dir: Optional[str] = None
+        output_dir: Optional[str] = None,
     ) -> ProjectOutput:
-        """
-        执行完整的工作流
-        
-        Args:
-            md_path: 论文文件路径（支持Markdown/PDF）
-            data_dir: 数据文件目录（可选）
-            output_dir: 输出目录（可选）
-            
-        Returns:
-            ProjectOutput: 项目输出结果
-        """
-        # 生成任务ID
         self.task_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-        logger.info(f"开始任务: {self.task_id}")
-        
-        # 创建工作目录
+        self._publish(EVENT_SYSTEM, f"开始任务: {self.task_id}")
+
         base_output = output_dir or settings.OUTPUT_DIR
         self.work_dir = create_work_dir(self.task_id, base_output)
-        
+
+        code_interpreter: Optional[LocalCodeInterpreter] = None
         try:
-            # Phase 1: 读取Markdown文件
-            logger.info("=" * 50)
-            logger.info("Phase 1: 读取Markdown文件")
-            logger.info("=" * 50)
+            # Phase 1: 读取输入
+            self._publish(EVENT_SYSTEM, "Phase 1/6: 读取论文")
             parsed_content, source_ext = await self._load_input_content(md_path)
-            
-            # 保存原始输入和Markdown版本
             if source_ext == ".pdf":
                 shutil.copy2(md_path, os.path.join(self.work_dir, "thesis.pdf"))
-                save_code_file(
-                    self.work_dir,
-                    "thesis.md",
-                    parsed_content.raw_markdown or ""
-                )
+                save_code_file(self.work_dir, "thesis.md", parsed_content.raw_markdown or "")
             else:
                 shutil.copy2(md_path, os.path.join(self.work_dir, "thesis.md"))
-            
+
             # Phase 2: 扫描数据文件
-            logger.info("=" * 50)
-            logger.info("Phase 2: 数据文件扫描")
-            logger.info("=" * 50)
-            data_files = []
+            self._publish(EVENT_SYSTEM, "Phase 2/6: 扫描数据文件")
+            data_files: List[DataFileInfo] = []
             if data_dir and os.path.exists(data_dir):
                 data_files = scan_data_files(data_dir)
-                # 复制数据文件到工作目录
                 for df in data_files:
                     dest = os.path.join(self.work_dir, df.file_name)
                     shutil.copy2(df.file_path, dest)
-                    df.file_path = dest  # 更新路径
-                logger.info(f"发现 {len(data_files)} 个数据文件")
-            else:
-                logger.info("无额外数据文件")
-            
+                    df.file_path = dest
+                self._publish(EVENT_SYSTEM, f"发现 {len(data_files)} 个数据文件")
+
             # Phase 3: 内容分析
-            logger.info("=" * 50)
-            logger.info("Phase 3: 内容分析")
-            logger.info("=" * 50)
+            self._publish(EVENT_SYSTEM, "Phase 3/6: 分析论文，拆解复现任务")
             analysis_result = await self.analyzer_agent.run(parsed_content, data_files)
-            
-            # 保存分析结果
             self._save_analysis_result(analysis_result)
-            
-            # Phase 4: 代码生成
-            logger.info("=" * 50)
-            logger.info("Phase 4: 代码生成")
-            logger.info("=" * 50)
-            generated_codes = await self.coder_agent.run(analysis_result, data_files)
-            
-            # Phase 5: 代码验证
-            logger.info("=" * 50)
-            logger.info("Phase 5: 代码验证")
-            logger.info("=" * 50)
-            validation_results = await self.validator_agent.run(generated_codes)
-            
-            # 应用修复
-            final_codes = self._apply_fixes(generated_codes, validation_results)
-            
-            # Phase 6: 生成项目输出
-            logger.info("=" * 50)
-            logger.info("Phase 6: 生成项目")
-            logger.info("=" * 50)
-            project_output = self._generate_project_output(
-                parsed_content,
-                analysis_result,
-                final_codes
+            if not analysis_result.code_tasks:
+                raise ValueError("分析阶段未生成任何复现任务，请检查论文内容或更换分析模型")
+            self._publish(
+                EVENT_SYSTEM,
+                f"分析完成: 论文类型={analysis_result.thesis_type.value}, "
+                f"共 {len(analysis_result.code_tasks)} 个复现任务",
             )
-            
-            # 保存所有文件
+
+            # Phase 4: 初始化执行环境
+            self._publish(EVENT_SYSTEM, "Phase 4/6: 启动 Jupyter 内核执行环境")
+            notebook_serializer = NotebookSerializer(work_dir=self.work_dir)
+            code_interpreter = LocalCodeInterpreter(
+                work_dir=self.work_dir,
+                notebook_serializer=notebook_serializer,
+                event_bus=self.event_bus,
+            )
+            await code_interpreter.initialize()
+
+            coder_agent = CoderAgent(
+                llm=self.coder_llm,
+                work_dir=self.work_dir,
+                code_interpreter=code_interpreter,
+                event_bus=self.event_bus,
+                max_chat_turns=settings.MAX_CHAT_TURNS,
+                max_retries=settings.MAX_CODE_RETRIES,
+            )
+            writer_agent = WriterAgent(self.writer_llm, event_bus=self.event_bus)
+            templates = self._load_report_templates()
+            context = self._build_coder_context(analysis_result, data_files)
+
+            # Phase 5: 逐任务交错执行：代码 → 报告章节
+            sorted_tasks = sorted(analysis_result.code_tasks, key=lambda t: t.priority)
+            task_results: List[CoderExecutionResult] = []
+            report = ReportOutput()
+            task_section_keys: List[str] = []
+
+            for i, task in enumerate(sorted_tasks, 1):
+                self._publish(
+                    EVENT_SYSTEM,
+                    f"Phase 5/6: 复现任务 {i}/{len(sorted_tasks)}: {task.title}",
+                )
+                result = await coder_agent.run(task, context, data_files)
+                task_results.append(result)
+
+                section_key = f"task_{i}"
+                task_section_keys.append(section_key)
+                section_content = await writer_agent.run(
+                    self._build_task_section_prompt(
+                        templates, task, result, i, len(sorted_tasks)
+                    ),
+                    available_images=result.created_images,
+                )
+                report.sections[section_key] = section_content
+
+            # Phase 6: 撰写包装章节并组装输出
+            self._publish(EVENT_SYSTEM, "Phase 6/6: 撰写报告包装章节")
+            thesis_info = self._build_thesis_info(parsed_content, analysis_result)
+            tasks_overview = self._build_tasks_overview(sorted_tasks)
+            comparison_info = self._build_comparison_info(sorted_tasks, task_results)
+
+            for key in WRAPPER_SECTIONS:
+                prompt = self._render_template(
+                    templates.get(key, ""),
+                    thesis_info=thesis_info,
+                    tasks_overview=tasks_overview,
+                    thesis_title=parsed_content.title or "论文复现",
+                )
+                report.sections[key] = await writer_agent.run(prompt)
+
+            for key in TAIL_SECTIONS:
+                prompt = self._render_template(
+                    templates.get(key, ""),
+                    thesis_info=thesis_info,
+                    tasks_overview=tasks_overview,
+                    comparison_info=comparison_info,
+                )
+                report.sections[key] = await writer_agent.run(prompt)
+
+            report.sequence = WRAPPER_SECTIONS + task_section_keys + TAIL_SECTIONS
+            report.assemble()
+
+            # 组装项目输出
+            requirements = sorted(
+                set(analysis_result.libraries) | set(DEFAULT_LIBRARIES)
+            )
+            project_output = ProjectOutput(
+                project_name=self.task_id,
+                thesis_title=parsed_content.title,
+                report=report,
+                notebook_file="notebook.ipynb",
+                requirements=requirements,
+                readme=self._generate_readme(parsed_content, analysis_result, sorted_tasks, task_results),
+                task_results=task_results,
+            )
             self._save_project_files(project_output)
-            
-            logger.info(f"任务完成: {self.task_id}")
-            logger.info(f"输出目录: {self.work_dir}")
-            
+
+            self._publish(EVENT_SYSTEM, f"任务完成: {self.task_id}")
+            self._publish(EVENT_SYSTEM, f"输出目录: {self.work_dir}")
             return project_output
-            
+
         except Exception as e:
             logger.error(f"工作流执行失败: {e}")
             raise
-    
+        finally:
+            if code_interpreter:
+                await code_interpreter.cleanup()
+
+    # ------------------------------------------------------------------ 输入解析
+
     async def _load_input_content(self, input_path: str) -> Tuple[ParsedContent, str]:
-        """
-        根据文件类型加载并解析内容
-        
-        Returns:
-            (ParsedContent, 扩展名)
-        """
         ext = Path(input_path).suffix.lower()
-        
+
         if ext == ".pdf":
             logger.info("检测到PDF论文，使用ParserAgent解析")
             parsed = await self.parser_agent.run(input_path)
             if not parsed.raw_markdown:
                 parsed.raw_markdown = ""
             return parsed, ext
-        
+
         if ext in {".md", ".markdown", ".txt"} or not ext:
-            parsed = await self._parse_markdown_file(input_path)
-            return parsed, ".md"
-        
+            return await self._parse_markdown_file(input_path), ".md"
+
         logger.warning(f"不支持的文件类型({ext})，按Markdown处理")
-        parsed = await self._parse_markdown_file(input_path)
-        return parsed, ".md"
-    
+        return await self._parse_markdown_file(input_path), ".md"
+
     async def _parse_markdown_file(self, md_path: str) -> ParsedContent:
-        """
-        读取并解析Markdown文件
-        
-        Args:
-            md_path: Markdown文件路径
-            
-        Returns:
-            ParsedContent: 解析后的内容
-        """
         logger.info(f"读取Markdown文件: {md_path}")
-        
-        # 读取Markdown内容
-        with open(md_path, 'r', encoding='utf-8') as f:
+        with open(md_path, "r", encoding="utf-8") as f:
             markdown_content = f.read()
-        
         logger.info(f"Markdown文件大小: {len(markdown_content)} 字符")
         return await self._parse_markdown_content(markdown_content)
-    
+
     async def _parse_markdown_content(self, markdown_content: str) -> ParsedContent:
-        """使用LLM解析Markdown字符串"""
         prompt = f"""请分析以下Markdown文档，提取论文的结构化信息。
 
 文档内容:
@@ -232,27 +273,139 @@ class ThesisToCodeWorkflow:
         try:
             response = await self.analyzer_llm.simple_chat(prompt)
             data = load_json_from_response(response)
-            
             logger.info(f"解析成功: 标题={data.get('title', '未知')}")
-            
             return ParsedContent(
                 title=data.get("title", ""),
                 abstract=data.get("abstract", ""),
                 keywords=data.get("keywords", []),
                 chapters=data.get("chapters", {}),
                 tables=data.get("tables", []),
-                raw_markdown=markdown_content
+                raw_markdown=markdown_content,
             )
-            
         except Exception as e:
             logger.error(f"解析Markdown失败: {e}")
-            # 返回基本内容，让后续流程继续
             return ParsedContent(raw_markdown=markdown_content)
-    
+
+    # ------------------------------------------------------------------ 提示词组装
+
+    @staticmethod
+    def _load_report_templates() -> dict:
+        try:
+            with open(REPORT_TEMPLATE_PATH, "rb") as f:
+                raw = tomllib.load(f)
+            # 模板格式为 [section] + 同名 key，展平为 {section: 模板文本}
+            return {
+                key: (value.get(key, "") if isinstance(value, dict) else value)
+                for key, value in raw.items()
+            }
+        except Exception as e:
+            logger.error(f"加载报告模板失败: {e}")
+            return {}
+
+    @staticmethod
+    def _render_template(template: str, **placeholders: str) -> str:
+        """用 str.replace 渲染模板占位符（避免 format 与 JSON 花括号冲突）"""
+        result = template.strip().strip('"').strip()
+        for key, value in placeholders.items():
+            result = result.replace("{" + key + "}", value)
+        return result
+
+    def _build_coder_context(
+        self,
+        analysis_result: AnalysisResult,
+        data_files: List[DataFileInfo],
+    ) -> str:
+        context = f"""## 项目背景
+论文标题: {analysis_result.summary[:200] if analysis_result.summary else ''}
+论文类型: {analysis_result.thesis_type.value}
+研究方法: {analysis_result.research_method}
+技术栈: {', '.join(analysis_result.tech_stack)}
+
+## 数据信息
+"""
+        if data_files:
+            for df in data_files:
+                context += f"\n### {df.file_name}\n"
+                context += f"- 类型: {df.file_type}\n"
+                if df.columns:
+                    context += f"- 列名: {df.columns}\n"
+                if df.row_count:
+                    context += f"- 行数: {df.row_count}\n"
+        else:
+            context += "无额外数据文件，需要根据论文描述模拟或生成示例数据。\n"
+
+        context += "\n## 复现任务列表\n"
+        for t in analysis_result.code_tasks:
+            context += f"\n### {t.title} (优先级{t.priority})\n"
+            context += f"- 类型: {t.task_type.value}\n"
+            context += f"- 描述: {t.description}\n"
+        return context
+
+    def _build_task_section_prompt(
+        self,
+        templates: dict,
+        task: CodeTask,
+        result: CoderExecutionResult,
+        index: int,
+        total: int,
+    ) -> str:
+        template = templates.get("task_section", "")
+        code_output = result.code_output[:4000] if result.code_output else "（无代码输出）"
+        coder_summary = result.code_summary[:3000] if result.code_summary else "（无总结）"
+        if not result.success:
+            coder_summary = f"⚠️ 任务执行失败：{result.error_message}\n\n{coder_summary}"
+
+        return self._render_template(
+            template,
+            section_title=f"{index}. 复现任务{index}/{total}：{task.title}",
+            paper_section=task.paper_section or "未指定",
+            paper_results=task.paper_results or "论文未给出具体数值",
+            coder_summary=coder_summary,
+            code_output=code_output,
+            images_prompt="（图片列表见提示词末尾）",
+        )
+
+    @staticmethod
+    def _build_thesis_info(parsed_content: ParsedContent, analysis: AnalysisResult) -> str:
+        return (
+            f"论文标题: {parsed_content.title or '未知'}\n"
+            f"论文类型: {analysis.thesis_type.value}\n"
+            f"研究方法: {analysis.research_method}\n"
+            f"摘要: {parsed_content.abstract[:1000]}\n"
+            f"关键词: {', '.join(parsed_content.keywords)}\n"
+            f"章节: {', '.join(list(parsed_content.chapters.keys())[:20])}\n"
+            f"技术栈: {', '.join(analysis.tech_stack)}"
+        )
+
+    @staticmethod
+    def _build_tasks_overview(tasks: List[CodeTask]) -> str:
+        lines = []
+        for i, t in enumerate(tasks, 1):
+            lines.append(
+                f"任务{i}: {t.title} | 类型: {t.task_type.value} | "
+                f"对应章节: {t.paper_section or '未指定'} | 描述: {t.description[:200]} | "
+                f"复现方案: {t.plan[:300] if t.plan else '无'}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _build_comparison_info(
+        tasks: List[CodeTask], results: List[CoderExecutionResult]
+    ) -> str:
+        lines = []
+        for i, (t, r) in enumerate(zip(tasks, results), 1):
+            status = "成功" if r.success else f"失败({r.error_message[:100] if r.error_message else '未知'})"
+            lines.append(
+                f"任务{i}: {t.title} | 执行状态: {status} | "
+                f"论文结果: {t.paper_results or '未给出'} | "
+                f"复现结果摘要: {r.code_summary[:800] if r.code_summary else '无'} | "
+                f"生成图片: {', '.join(r.created_images) if r.created_images else '无'}"
+            )
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------ 输出保存
+
     def _save_analysis_result(self, result: AnalysisResult) -> None:
-        """保存分析结果"""
-        import json
-        
         analysis_data = {
             "thesis_type": result.thesis_type.value,
             "research_method": result.research_method,
@@ -264,192 +417,112 @@ class ThesisToCodeWorkflow:
                     "task_id": t.task_id,
                     "type": t.task_type.value,
                     "title": t.title,
-                    "description": t.description
+                    "description": t.description,
+                    "plan": t.plan,
+                    "paper_section": t.paper_section,
+                    "paper_results": t.paper_results,
                 }
                 for t in result.code_tasks
             ],
-            "summary": result.summary
+            "summary": result.summary,
         }
-        
         save_code_file(
-            self.work_dir, 
-            "analysis_result.json", 
-            json.dumps(analysis_data, ensure_ascii=False, indent=2)
+            self.work_dir,
+            "analysis_result.json",
+            json.dumps(analysis_data, ensure_ascii=False, indent=2),
         )
-    
-    def _apply_fixes(
-        self, 
-        codes: List[GeneratedCode], 
-        results: List[ValidationResult]
-    ) -> List[GeneratedCode]:
-        """应用验证修复"""
-        fixed_codes = []
-        
-        result_map = {r.task_id: r for r in results}
-        
-        for code in codes:
-            result = result_map.get(code.task_id)
-            if result and result.fixed_code:
-                fixed_codes.append(GeneratedCode(
-                    task_id=code.task_id,
-                    file_name=code.file_name,
-                    code=result.fixed_code,
-                    description=code.description,
-                    dependencies=code.dependencies
-                ))
-            else:
-                fixed_codes.append(code)
-        
-        return fixed_codes
-    
-    def _generate_project_output(
-        self,
-        parsed_content: ParsedContent,
-        analysis_result: AnalysisResult,
-        codes: List[GeneratedCode]
-    ) -> ProjectOutput:
-        """生成项目输出"""
-        
-        # 收集所有文件
-        files = {code.file_name: code.code for code in codes}
-        
-        # 收集所有依赖
-        all_deps = set()
-        for code in codes:
-            all_deps.update(code.dependencies)
-        
-        # 添加基础依赖
-        all_deps.update(analysis_result.libraries)
-        
-        # 生成requirements.txt
-        requirements = sorted(list(all_deps))
-        
-        # 生成README
-        readme = self._generate_readme(parsed_content, analysis_result, codes)
-        
-        # 生成运行说明
-        run_instructions = self._generate_run_instructions(codes)
-        
-        return ProjectOutput(
-            project_name=self.task_id,
-            thesis_title=parsed_content.title,
-            files=files,
-            requirements=requirements,
-            readme=readme,
-            run_instructions=run_instructions
-        )
-    
+
     def _generate_readme(
         self,
         parsed_content: ParsedContent,
-        analysis_result: AnalysisResult,
-        codes: List[GeneratedCode]
+        analysis: AnalysisResult,
+        tasks: List[CodeTask],
+        results: List[CoderExecutionResult],
     ) -> str:
-        """生成README文档"""
-        readme = f"""# {parsed_content.title or '毕业论文代码'}
+        readme = f"""# {parsed_content.title or '论文复现'} - 复现项目
 
 ## 项目说明
 
-本项目是根据毕业论文自动生成的Python代码实现。
+本项目是根据论文自动复现生成的：**notebook.ipynb** 包含全部可复现代码（含执行输出与图表），
+**report.md** 是图文并茂的复现报告（复现结果 vs 论文结果对照）。
 
 ### 论文信息
 - **标题**: {parsed_content.title}
-- **类型**: {analysis_result.thesis_type.value}
-- **研究方法**: {analysis_result.research_method}
-
-### 技术栈
-{chr(10).join(f'- {tech}' for tech in analysis_result.tech_stack)}
+- **类型**: {analysis.thesis_type.value}
+- **研究方法**: {analysis.research_method}
 
 ## 文件结构
 
 ```
 {self.task_id}/
-"""
-        for code in codes:
-            readme += f"├── {code.file_name}  # {code.description}\n"
-        
-        readme += f"""├── requirements.txt  # 依赖列表
-├── README.md  # 项目说明
-└── analysis_result.json  # 分析结果
+├── notebook.ipynb       # 全部复现代码（Jupyter，可直接重跑）
+├── report.md            # 复现报告（方法对照/结果对比/图表解读）
+├── requirements.txt     # 依赖列表
+├── thesis.md            # 论文原文（Markdown）
+├── analysis_result.json # 论文分析与任务拆解结果
+├── *.png                # 代码生成的图表
+└── README.md            # 本文件
 ```
 
-## 安装依赖
+## 使用方式
 
 ```bash
 pip install -r requirements.txt
+jupyter notebook notebook.ipynb
 ```
 
-## 运行方式
-
-```bash
-python main.py
-```
-
-## 代码模块说明
+## 复现任务清单
 
 """
-        for code in codes:
-            readme += f"### {code.file_name}\n{code.description}\n\n"
-        
-        readme += """
+        for i, (t, r) in enumerate(zip(tasks, results), 1):
+            status = "✅ 成功" if r.success else "❌ 失败"
+            readme += f"{i}. {t.title} {status}"
+            if r.created_images:
+                readme += f"（图表: {', '.join(r.created_images)}）"
+            readme += "\n"
+
+        readme += f"""
 ## 注意事项
 
-1. 请确保已安装所有依赖
-2. 如有数据文件，请放在项目目录下
-3. 代码由AI自动生成，可能需要根据实际情况调整
+1. 代码由 AI 自动生成并真实执行验证，如数据文件不同请调整读取路径
+2. report.md 中的所有数值均来自代码真实输出
 
-## 生成信息
-
-- 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-- 任务ID: {self.task_id}
+---
+生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · 任务ID: {self.task_id}
 """
         return readme
-    
-    def _generate_run_instructions(self, codes: List[GeneratedCode]) -> str:
-        """生成运行说明"""
-        instructions = """# 运行说明
 
-## 环境准备
-
-1. 确保Python版本 >= 3.8
-2. 安装依赖: pip install -r requirements.txt
-
-## 运行步骤
-
-"""
-        for i, code in enumerate(codes, 1):
-            if code.file_name != "main.py":
-                instructions += f"{i}. 运行 {code.file_name}: `python {code.file_name}`\n"
-        
-        instructions += f"""
-## 或者直接运行主程序
-
-```bash
-python main.py
-```
-
-## 常见问题
-
-1. 如果遇到模块导入错误，请检查是否安装了所有依赖
-2. 如果数据文件路径错误，请修改代码中的文件路径
-3. 如有其他问题，请检查错误信息并相应修改代码
-"""
-        return instructions
-    
     def _save_project_files(self, output: ProjectOutput) -> None:
-        """保存项目文件"""
-        # 保存代码文件
-        for file_name, code in output.files.items():
-            save_code_file(self.work_dir, file_name, code)
-        
-        # 保存requirements.txt
+        self._relocate_report_images(output.report.full_report)
+        save_code_file(self.work_dir, "report.md", output.report.full_report)
         requirements_content = "\n".join(output.requirements)
         save_code_file(self.work_dir, "requirements.txt", requirements_content)
-        
-        # 保存README
         save_code_file(self.work_dir, "README.md", output.readme)
-        
-        # 保存运行说明
-        save_code_file(self.work_dir, "RUN_INSTRUCTIONS.md", output.run_instructions)
-        
         logger.info(f"项目文件已保存到: {self.work_dir}")
+
+    def _relocate_report_images(self, report_content: str) -> None:
+        """报告以裸文件名引用图片；若图片被代码移入子目录，复制回工作目录根以保证链接有效"""
+        import re as _re
+
+        referenced = set(_re.findall(r"!\[[^\]]*\]\(([^)]+)\)", report_content))
+        for name in referenced:
+            if "/" in name or "\\" in name:
+                continue
+            if os.path.exists(os.path.join(self.work_dir, name)):
+                continue
+            for root, _dirs, files in os.walk(self.work_dir):
+                if name in files:
+                    shutil.copy(
+                        os.path.join(root, name),
+                        os.path.join(self.work_dir, name),
+                    )
+                    logger.info(f"图片归位: {name} <- {root}")
+                    break
+            else:
+                logger.warning(f"报告引用的图片不存在: {name}")
+
+    # ------------------------------------------------------------------ 事件
+
+    def _publish(self, event_type: str, content: str) -> None:
+        logger.info(content)
+        self.event_bus.publish(event_type, content)

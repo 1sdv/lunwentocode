@@ -22,16 +22,22 @@ class Settings(BaseSettings):
     CODER_LLM_API_KEY: str = ""
     CODER_LLM_MODEL: str = "intern-latest"
     CODER_LLM_BASE_URL: Optional[str] = None
-    
+
+    # 写作LLM配置（用于复现报告撰写，留空则复用分析LLM）
+    WRITER_LLM_API_KEY: str = ""
+    WRITER_LLM_MODEL: str = ""
+    WRITER_LLM_BASE_URL: Optional[str] = None
+
     # 兼容旧配置（如果只设置一组，两个LLM使用相同配置）
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "intern-latest"
     LLM_BASE_URL: Optional[str] = None
-    
-    # 代码执行配置
-    MAX_CODE_RETRIES: int = 5  # 代码最大重试次数
-    MAX_CHAT_TURNS: int = 30   # 最大对话轮次
+
+    # 执行配置
+    MAX_CODE_RETRIES: int = 5  # 代码错误最大反思重试次数
+    MAX_CHAT_TURNS: int = 30   # 每个任务最大对话轮次
     CODE_TIMEOUT: int = 300    # 代码执行超时(秒)
+    CODER_CONTEXT_WINDOW: int = 128000  # 代码手上下文窗口（token）
     
     # 路径配置
     UPLOAD_DIR: str = "uploads"

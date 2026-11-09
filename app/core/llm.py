@@ -2,6 +2,18 @@
 LLM 调用封装 - 使用OpenAI SDK
 """
 import asyncio
+import os
+
+# httpx 无法解析 NO_PROXY 中的 IPv6 字面量 [::1]，在任何 httpx 客户端创建前先清理
+for _key in ("NO_PROXY", "no_proxy"):
+    _val = os.environ.get(_key, "")
+    if "[::1]" in _val:
+        _cleaned = _val.replace("[::1],", "").replace("[::1]", "").strip(",")
+        if _cleaned:
+            os.environ[_key] = _cleaned
+        else:
+            os.environ.pop(_key, None)
+
 import httpx
 from typing import List, Dict, Any, Optional
 from openai import AsyncOpenAI

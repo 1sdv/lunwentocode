@@ -164,7 +164,7 @@ class AnalyzerAgent(BaseAgent):
                 if df.row_count:
                     data_info += f", 行数: {df.row_count}"
         
-        prompt = f"""根据以下论文信息，生成需要实现的Python代码任务列表。
+        prompt = f"""根据以下论文信息，生成需要实现的Python代码复现任务列表。
 
 论文标题: {parsed_content.title}
 论文类型: {thesis_analysis.get('type', '')}
@@ -177,7 +177,7 @@ class AnalyzerAgent(BaseAgent):
 章节内容:
 {json.dumps(parsed_content.chapters, ensure_ascii=False, indent=2)[:3000]}
 
-请生成代码任务列表，每个任务应该具体、可执行。任务类型包括:
+请生成代码复现任务列表，任务应按论文实验流程排列（数据预处理通常在前）。每个任务应该具体、可执行。任务类型包括:
 - data_preprocessing: 数据预处理
 - data_analysis: 数据分析
 - model_training: 模型训练
@@ -194,38 +194,44 @@ class AnalyzerAgent(BaseAgent):
             "task_type": "任务类型",
             "title": "任务标题",
             "description": "详细描述",
+            "plan": "复现方案：使用的方法、实现步骤、关键参数及其来源（论文给定/数据统计/自行设定）",
+            "paper_section": "对应论文章节名",
+            "paper_results": "论文中该部分报告的具体结果数值（如指标、结论；若论文未给出具体数值则写无）",
             "requirements": ["具体要求1", "具体要求2"],
             "input_data": "输入数据描述",
-            "expected_output": "期望输出",
+            "expected_output": "期望输出（结果表格/指标/图表）",
             "priority": 0
         }}
     ]
 }}
 
-按执行顺序排列任务，priority数字越小优先级越高。只返回JSON。"""
+priority数字越小优先级越高，按执行顺序排列任务。只返回JSON。"""
 
         try:
             response = await self.llm.simple_chat(prompt)
             data = load_json_from_response(response)
-            
+
             tasks = []
             for i, task_data in enumerate(data.get("tasks", [])):
                 task_type = self._parse_task_type(task_data.get("task_type", ""))
-                
+
                 task = CodeTask(
                     task_id=f"task_{uuid.uuid4().hex[:8]}",
                     task_type=task_type,
                     title=task_data.get("title", f"任务{i+1}"),
                     description=task_data.get("description", ""),
+                    plan=task_data.get("plan", ""),
+                    paper_section=task_data.get("paper_section", ""),
+                    paper_results=task_data.get("paper_results", ""),
                     requirements=task_data.get("requirements", []),
                     input_data=task_data.get("input_data"),
                     expected_output=task_data.get("expected_output"),
                     priority=task_data.get("priority", i)
                 )
                 tasks.append(task)
-            
+
             return tasks
-            
+
         except Exception as e:
             logger.error(f"生成代码任务失败: {e}")
             return []

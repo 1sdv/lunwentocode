@@ -62,11 +62,14 @@ class ParsedContent(BaseModel):
 
 
 class CodeTask(BaseModel):
-    """代码任务"""
+    """代码任务（复现任务）"""
     task_id: str
     task_type: CodeTaskType
     title: str
     description: str
+    plan: str = ""                       # 复现方案：方法、步骤、关键参数
+    paper_section: str = ""              # 对应的论文章节
+    paper_results: str = ""              # 论文中报告的结果（用于复现对比）
     requirements: List[str] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)  # 依赖的其他任务ID
     input_data: Optional[str] = None  # 输入数据描述
@@ -86,32 +89,36 @@ class AnalysisResult(BaseModel):
     summary: str = ""  # 分析总结
 
 
-class GeneratedCode(BaseModel):
-    """生成的代码"""
+class CoderExecutionResult(BaseModel):
+    """代码手单任务执行结果（Coder → Writer 的 A2A 消息）"""
     task_id: str
-    file_name: str
-    code: str
-    description: str
-    dependencies: List[str] = Field(default_factory=list)
-
-
-class ValidationResult(BaseModel):
-    """代码验证结果"""
-    task_id: str
-    is_valid: bool
-    syntax_check: bool = True
-    import_check: bool = True
-    execution_check: bool = False  # 是否通过执行测试
+    section: str                        # notebook/report 中的分节名
+    code_summary: str = ""              # LLM 对本次执行过程的总结
+    code_output: str = ""               # 代码文本输出（截断后）
+    created_images: List[str] = Field(default_factory=list)  # 本任务生成的图片文件名
+    success: bool = True
     error_message: Optional[str] = None
-    suggestions: List[str] = Field(default_factory=list)
-    fixed_code: Optional[str] = None
+
+
+class ReportOutput(BaseModel):
+    """复现报告"""
+    sections: Dict[str, str] = Field(default_factory=dict)  # section_key: 内容
+    sequence: List[str] = Field(default_factory=list)       # 章节拼接顺序
+    full_report: str = ""
+
+    def assemble(self) -> str:
+        """按顺序拼接全文"""
+        parts = [self.sections[key] for key in self.sequence if key in self.sections]
+        self.full_report = "\n\n".join(parts)
+        return self.full_report
 
 
 class ProjectOutput(BaseModel):
     """项目输出"""
     project_name: str
     thesis_title: str
-    files: Dict[str, str] = Field(default_factory=dict)  # 文件名: 代码内容
+    report: ReportOutput = Field(default_factory=ReportOutput)
+    notebook_file: str = "notebook.ipynb"
     requirements: List[str] = Field(default_factory=list)
     readme: str = ""
-    run_instructions: str = ""
+    task_results: List[CoderExecutionResult] = Field(default_factory=list)
