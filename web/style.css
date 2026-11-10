@@ -90,6 +90,19 @@ a { color: inherit; }
   transition: color var(--ease), border-color var(--ease);
 }
 .mastnav-link:hover { color: var(--fg); border-bottom-color: var(--accent); }
+.github-link {
+  display: grid; place-items: center;
+  width: 32px; height: 32px; flex: none;
+  color: var(--muted); text-decoration: none;
+  border: 1px solid var(--rule); border-radius: 3px;
+  transition: color var(--ease), border-color var(--ease), background var(--ease), transform var(--ease);
+}
+.github-link svg { width: 17px; height: 17px; display: block; }
+.github-link:hover {
+  color: var(--accent); border-color: var(--accent);
+  background: rgba(217, 180, 74, .1);
+  transform: translateY(-1px);
+}
 
 /* ================= 主体 ================= */
 .sheet { padding-top: 46px; padding-bottom: 80px; }
