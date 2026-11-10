@@ -145,15 +145,60 @@ h1 {
   border-left: 6px solid var(--amber); border-top: 3px solid transparent; border-bottom: 3px solid transparent;
 }
 
-.hero-links { margin-top: 26px; display: flex; gap: 26px; font-family: var(--sans); font-size: 14.5px; }
-.hero-links a {
-  color: var(--fg); text-decoration: none;
-  border-bottom: 1px solid var(--amber); padding-bottom: 3px;
-  transition: color var(--motion) ease, background var(--motion) ease;
+.hero-links {
+  margin-top: 30px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
-.hero-links a:hover { color: var(--amber); }
-.hero-links a.quiet { color: var(--muted); border-bottom-color: var(--rule); }
-.hero-links a.quiet:hover { color: var(--fg); border-bottom-color: var(--muted); }
+.hero-links a {
+  position: relative;
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px;
+  align-items: start;
+  padding: 15px 16px;
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: rgba(28, 32, 22, .55);
+  transition: border-color var(--motion) ease, background var(--motion) ease,
+              transform var(--motion) ease, box-shadow var(--motion) ease;
+}
+.hero-links a::after {
+  content: "→"; position: absolute; right: 14px; top: 13px;
+  font-family: var(--sans); font-size: 13px; color: var(--muted);
+  transition: color var(--motion) ease, transform var(--motion) ease;
+}
+.hero-links a:hover {
+  border-color: var(--amber);
+  background: rgba(217, 180, 74, .09);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px -18px rgba(217, 180, 74, .85);
+}
+.hero-links a:hover::after { color: var(--amber); transform: translateX(3px); }
+.hero-links a.quiet:hover {
+  border-color: var(--border);
+  background: rgba(217, 180, 74, .06);
+  box-shadow: 0 12px 26px -18px rgba(0, 0, 0, .9);
+}
+.hero-links .ico {
+  width: 30px; height: 30px; flex: none;
+  display: grid; place-items: center;
+  color: var(--amber);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: rgba(20, 23, 15, .7);
+  transition: border-color var(--motion) ease;
+}
+.hero-links a:hover .ico { border-color: rgba(217, 180, 74, .45); }
+.hero-links .ico svg { width: 15px; height: 15px; display: block; }
+.hero-links .txt { min-width: 0; }
+.hero-links .txt b {
+  display: block; font-family: var(--serif); font-size: 15px; font-weight: 700;
+  letter-spacing: .3px; color: var(--fg);
+}
+.hero-links .txt span {
+  display: block; margin-top: 3px;
+  font-family: var(--sans); font-size: 12px; color: var(--muted); line-height: 1.6;
+}
 
 /* ---------- 稿纸（Hero 的记忆点） ---------- */
 .sheet {
@@ -392,6 +437,7 @@ footer .seal-note { color: #75775c; }
   .online { grid-template-columns: 1fr; }
   .online-shot { transform: rotate(0deg); }
   .runs { grid-template-columns: 1fr; }
+  .hero-links { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   h1 { font-size: calc(31px * var(--site-type, 1)); }
@@ -450,9 +496,41 @@ footer .seal-note { color: #75775c; }
       </div>
 
       <div class="hero-links">
-        <a href="#online">在线运行</a>
-        <a href="#run">在本地跑一遍</a>
-        <a class="quiet" href="#scale">看它产出什么</a>
+        <a href="#online">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"></path>
+            </svg>
+          </span>
+          <span class="txt">
+            <b>在线运行</b>
+            <span>服务器已部署，打开浏览器即用</span>
+          </span>
+        </a>
+        <a href="#run">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+              <path d="M7 9l3 3-3 3M13 15h4"></path>
+            </svg>
+          </span>
+          <span class="txt">
+            <b>在本地跑一遍</b>
+            <span>命令行或浏览器界面，两种方式</span>
+          </span>
+        </a>
+        <a class="quiet" href="#scale">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path>
+            </svg>
+          </span>
+          <span class="txt">
+            <b>看它产出什么</b>
+            <span>一次真实运行的字数、章节与图表</span>
+          </span>
+        </a>
       </div>
     </div>
 
