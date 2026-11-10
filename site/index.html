@@ -296,6 +296,64 @@ h2 { font-size: calc(30px * var(--site-type, 1)); font-weight: 700; letter-spaci
   color: var(--amber); margin-right: 8px; letter-spacing: .5px;
 }
 
+/* ---------- 在线运行 ---------- */
+.online {
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: calc(var(--space) * 2); align-items: center;
+}
+.online-copy .section-index { margin-bottom: 12px; }
+.online-lead {
+  color: #bdbda0; font-size: 16px; line-height: 1.9; max-width: 34em;
+}
+.online-lead b { color: var(--fg); font-weight: 400; box-shadow: inset 0 -.5em 0 rgba(217, 180, 74, .20); }
+.online-cta {
+  margin-top: 26px; display: inline-flex; align-items: center; gap: 12px;
+  font-family: var(--sans); font-size: 15px; font-weight: 500;
+  color: var(--on-accent); background: var(--amber);
+  padding: 13px 26px; text-decoration: none;
+  border-radius: var(--radius);
+  transition: transform var(--motion) ease, box-shadow var(--motion) ease, background var(--motion) ease;
+  box-shadow: 0 10px 26px -14px rgba(217, 180, 74, .8);
+}
+.online-cta:hover {
+  background: #e6c563; transform: translateY(-2px);
+  box-shadow: 0 16px 34px -14px rgba(217, 180, 74, .9);
+}
+.online-cta .arrow { transition: transform var(--motion) ease; }
+.online-cta:hover .arrow { transform: translateX(4px); }
+.online-url {
+  margin-top: 16px; font-family: var(--mono); font-size: 13px;
+  color: var(--muted); word-break: break-all;
+}
+.online-url a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--rule); }
+.online-url a:hover { color: var(--amber); border-bottom-color: var(--amber); }
+.online-notes {
+  margin-top: 28px; list-style: none; border-top: 1px solid var(--rule);
+}
+.online-notes li {
+  display: grid; grid-template-columns: 20px 1fr; gap: 12px;
+  padding: 13px 0; border-bottom: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 13.5px; color: var(--muted); line-height: 1.7;
+}
+.online-notes li::before { content: "▸"; color: var(--amber); }
+.online-notes b { color: var(--fg); font-weight: 600; }
+.online-shot {
+  position: relative; margin: 0;
+  background: var(--paper); padding: 10px;
+  transform: rotate(.6deg);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, .35) inset,
+    0 26px 60px -26px rgba(0, 0, 0, .85),
+    0 2px 8px rgba(0, 0, 0, .35);
+  transition: transform var(--motion) ease, box-shadow var(--motion) ease;
+}
+.online-shot:hover { transform: rotate(0deg) translateY(-3px); box-shadow: 0 32px 68px -26px rgba(0, 0, 0, .9); }
+.online-shot img { width: 100%; display: block; }
+.online-shot figcaption {
+  margin-top: 12px; font-family: var(--sans); font-size: 12.5px;
+  color: var(--paper-soft); display: flex; justify-content: space-between; gap: 12px;
+}
+
 /* ---------- 本地运行 ---------- */
 .runs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: calc(var(--space) * 2); align-items: start; }
 .runs ol { list-style: none; counter-reset: r; }
@@ -331,6 +389,8 @@ footer .seal-note { color: #75775c; }
 @media (max-width: 960px) {
   .hero-grid { grid-template-columns: 1fr; }
   .sheet { transform: rotate(-.4deg); }
+  .online { grid-template-columns: 1fr; }
+  .online-shot { transform: rotate(0deg); }
   .runs { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
@@ -365,6 +425,7 @@ footer .seal-note { color: #75775c; }
       <a href="#scale">产出规模</a>
       <a href="#agents">分工</a>
       <a href="#plates">图表</a>
+      <a href="#online">在线运行</a>
       <a href="#run">本地运行</a>
     </nav>
   </div>
@@ -389,6 +450,7 @@ footer .seal-note { color: #75775c; }
       </div>
 
       <div class="hero-links">
+        <a href="#online">在线运行</a>
         <a href="#run">在本地跑一遍</a>
         <a class="quiet" href="#scale">看它产出什么</a>
       </div>
@@ -506,9 +568,46 @@ footer .seal-note { color: #75775c; }
   </div>
 </section>
 
+<section class="wrap" id="online">
+  <div class="online">
+    <div class="online-copy">
+      <p class="section-index">第四节<span class="rule"></span></p>
+      <h2>在线运行</h2>
+      <p class="online-lead">
+        整套系统已经部署在服务器上，<b>打开浏览器就能用</b>：上传研究方案、填入自己的
+        API Key，即可实时看到四个 Agent 的执行进度、日志、论文正文与图表产出。
+        你的 Key 只在本次任务的内存中使用，不写入服务器。
+      </p>
+
+      <a class="online-cta" href="http://1.95.206.112:8000/" target="_blank" rel="noopener noreferrer">
+        打开在线运行台
+        <span class="arrow" aria-hidden="true">→</span>
+      </a>
+      <p class="online-url">
+        <a href="http://1.95.206.112:8000/" target="_blank" rel="noopener noreferrer">http://1.95.206.112:8000/</a>
+      </p>
+
+      <ul class="online-notes">
+        <li><span><b>零安装</b>　不需要 Python 环境、依赖安装或 Jupyter 配置，打开即用。</span></li>
+        <li><span><b>可看示例</b>　没有 API Key 也能点「运行示例」，看一遍完整流程与产出。</span></li>
+        <li><span><b>过程可见</b>　左侧执行记录实时打印每个阶段的日志，失败会给出具体原因。</span></li>
+        <li><span><b>产出可下载</b>　论文正文、notebook、图表与依赖清单均可单独下载或打包。</span></li>
+      </ul>
+    </div>
+
+    <figure class="online-shot">
+      <img src="assets/screenshots/online_run.png" alt="在线运行界面：左侧为上传与模型配置，右侧为生成流程、产出文件与运行状态">
+      <figcaption>
+        <span>在线运行台 · 上传与配置 / 执行记录 / 论文正文</span>
+        <span>1.95.206.112:8000</span>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
 <section class="wrap" id="run">
   <div class="section-head">
-    <p class="section-index">第四节<span class="rule"></span></p>
+    <p class="section-index">第五节<span class="rule"></span></p>
     <h2>在本地运行</h2>
     <p class="deck">
       本站只是展示页。完整的生成系统在你的机器上运行，可以命令行调用，也可以打开浏览器界面看多 Agent 的执行进度。
