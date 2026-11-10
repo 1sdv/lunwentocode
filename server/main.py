@@ -105,6 +105,10 @@ async def on_startup() -> None:
     setup_logging()
     web_settings.ensure_dirs()
     logger.info("服务启动 | 输出目录=%s | 日志文件=logs/web.log", web_settings.OUTPUT_ROOT)
+    # 恢复磁盘上的历史任务记录，重启后仍可查看
+    restored = task_manager.restore()
+    if restored:
+        logger.info("已恢复 %d 条历史任务记录", restored)
     # 后台清理过期任务
     asyncio.create_task(_cleanup_loop())
     # 后台预热演示包，避免用户第一次点下载时干等

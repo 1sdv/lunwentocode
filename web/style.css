@@ -259,6 +259,40 @@ input::placeholder { color: #676956; }
   background: linear-gradient(90deg, var(--accent), var(--accent-deep));
   transition: width 500ms ease;
 }
+
+/* 历史任务列表 */
+.history { list-style: none; display: grid; gap: 7px; }
+.history li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  background: rgba(8, 10, 6, .28);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.history li:hover {
+  border-color: var(--accent);
+  background: rgba(217, 180, 74, .07);
+}
+.history li.active {
+  border-color: var(--accent);
+  background: rgba(217, 180, 74, .12);
+}
+.history-id {
+  font-family: var(--mono); font-size: 11.5px; color: var(--accent);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.history-state {
+  font-size: 10.5px; padding: 1px 5px; border-radius: 2px;
+  border: 1px solid currentColor; flex-shrink: 0;
+}
+.history-state.done { color: #7fae6a; }
+.history-state.error { color: #c0734f; }
+.history-state.running,
+.history-state.pending { color: var(--dim); }
+.history-empty {
+  font-size: 12.5px; color: var(--dim); padding: 4px 0;
+}
 .meter-num { font-family: var(--mono); font-size: 12.5px; color: var(--accent); min-width: 38px; text-align: right; }
 .side-note {
   margin-top: 10px; font-family: var(--mono); font-size: 11.5px;

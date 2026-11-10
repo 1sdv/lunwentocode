@@ -20,6 +20,13 @@ from app.core.workflow import ThesisToCodeWorkflow
 from app.utils.logger import logger
 
 from server.config import web_settings
+from server.task_store import (
+    list_records,
+    load_record,
+    load_result as _load_result,
+    save_record,
+    save_result,
+)
 
 
 @dataclass
@@ -40,6 +47,8 @@ class TaskRecord:
         default_factory=lambda: asyncio.Queue(maxsize=1000)
     )
     _thread: Optional[threading.Thread] = None
+    # 上次落盘时间，用于事件持久化节流
+    _last_persist_at: float = 0.0
 
     def public_dict(self) -> Dict[str, Any]:
         """对外暴露的状态（不含内部队列）"""
@@ -53,6 +62,37 @@ class TaskRecord:
             "finished_at": self.finished_at,
             "error": self.error,
         }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """完整快照：用于持久化到磁盘"""
+        return {
+            "task_id": self.task_id,
+            "status": self.status,
+            "title": self.title,
+            "message": self.message,
+            "progress": self.progress,
+            "created_at": self.created_at,
+            "finished_at": self.finished_at,
+            "error": self.error,
+            "events": list(self.events),
+            # result 里含完整论文正文，体积较大；单独存到 result.json
+            "has_result": self.result is not None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TaskRecord":
+        """从磁盘快照还原（内存态重建，事件历史一并恢复）"""
+        return cls(
+            task_id=data.get("task_id", ""),
+            status=data.get("status", "pending"),
+            created_at=data.get("created_at") or time.time(),
+            finished_at=data.get("finished_at"),
+            title=data.get("title", ""),
+            message=data.get("message", ""),
+            progress=data.get("progress", 0),
+            events=list(data.get("events") or []),
+            error=data.get("error"),
+        )
 
 
 # 事件类型 → 展示前缀与进度权重
@@ -102,6 +142,48 @@ class TaskManager:
         self._rate: Dict[str, List[float]] = {}
         self._rate_lock = threading.Lock()
 
+    # ---------------------------------------------------------------- 持久化
+
+    def restore(self) -> int:
+        """启动时从磁盘恢复历史任务记录。
+
+        只恢复「已完成/失败」的任务；运行中的任务在进程退出时已丢失，
+        恢复成 error 更诚实，避免前端一直等待一个永远不会来的进度。
+        """
+        restored = 0
+        for data in list_records(limit=200):
+            task_id = data.get("task_id")
+            if not task_id:
+                continue
+            status = data.get("status")
+            if status in ("pending", "running"):
+                data = dict(data)
+                data["status"] = "error"
+                data["error"] = "服务重启，任务已中断"
+                data["message"] = "服务重启，任务已中断"
+                data["finished_at"] = data.get("finished_at") or time.time()
+            record = TaskRecord.from_dict(data)
+            # 产出正文单独存放，按需读取
+            result = _load_result(task_id)
+            if result is not None:
+                record.result = result
+            with self._lock:
+                self._tasks[task_id] = record
+            restored += 1
+        if restored:
+            logger.info(f"已从磁盘恢复 {restored} 条历史任务记录")
+        return restored
+
+    def _persist(self, record: TaskRecord) -> None:
+        """把任务状态写入磁盘（失败不影响主流程）"""
+        try:
+            save_record(record.to_dict())
+            # 产出正文体积大，单独存一个文件
+            if record.result is not None:
+                save_result(record.task_id, record.result)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"持久化任务 {record.task_id} 失败: {exc}")
+
     # ---------------------------------------------------------------- 限流
 
     def check_rate_limit(self, client_ip: str) -> bool:
@@ -120,13 +202,53 @@ class TaskManager:
     # ---------------------------------------------------------------- 任务
 
     def get(self, task_id: str) -> Optional[TaskRecord]:
+        """取任务：先看内存，没有则从磁盘恢复"""
         with self._lock:
-            return self._tasks.get(task_id)
+            record = self._tasks.get(task_id)
+        if record is not None:
+            return record
+        # 内存没有 → 可能是服务重启前的历史任务
+        data = load_record(task_id)
+        if not data:
+            return None
+        record = TaskRecord.from_dict(data)
+        result = _load_result(task_id)
+        if result is not None:
+            record.result = result
+        with self._lock:
+            self._tasks[task_id] = record
+        return record
 
     def list_recent(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """列出最近任务：内存 + 磁盘合并去重"""
         with self._lock:
-            records = sorted(self._tasks.values(), key=lambda r: r.created_at, reverse=True)
-        return [r.public_dict() for r in records[:limit]]
+            records = sorted(
+                self._tasks.values(), key=lambda r: r.created_at, reverse=True
+            )
+        seen = {r.task_id for r in records}
+        merged = [r.public_dict() for r in records]
+
+        # 补充内存中没有的持久化任务
+        for data in list_records(limit=limit):
+            tid = data.get("task_id")
+            if not tid or tid in seen:
+                continue
+            seen.add(tid)
+            merged.append(
+                {
+                    "task_id": tid,
+                    "status": data.get("status", "pending"),
+                    "title": data.get("title", ""),
+                    "message": data.get("message", ""),
+                    "progress": data.get("progress", 0),
+                    "created_at": data.get("created_at") or 0,
+                    "finished_at": data.get("finished_at"),
+                    "error": data.get("error"),
+                    "restored": True,
+                }
+            )
+        merged.sort(key=lambda d: d.get("created_at") or 0, reverse=True)
+        return merged[:limit]
 
     def active_count(self) -> int:
         with self._lock:
@@ -165,6 +287,7 @@ class TaskManager:
         )
         record._thread = thread
         thread.start()
+        self._persist(record)
         logger.info(f"[{task_id}] 任务已提交")
         return record
 
@@ -210,6 +333,7 @@ class TaskManager:
                 record.progress = 100
                 record.message = "论文初稿生成完成"
                 self._emit(record, "system", "任务完成")
+                self._persist(record)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(f"[{record.task_id}] 任务失败")
                 self._finish_error(record, self._error_text(exc))
@@ -219,6 +343,8 @@ class TaskManager:
             if acquired:
                 self._semaphore.release()
             record.finished_at = time.time()
+            # 兜底落盘：确保结束时状态一定写进磁盘
+            self._persist(record)
             self._close_queue(record)
 
     async def _execute(
@@ -344,6 +470,17 @@ class TaskManager:
             record._queue.put_nowait(payload)
         except asyncio.QueueFull:
             logger.warning(f"[{record.task_id}] 事件队列已满，丢弃一条")
+        # 事件高频，落盘做节流；错误与结束事件立即写入
+        if etype in ("error", "system") or self._should_persist(record):
+            self._persist(record)
+
+    def _should_persist(self, record: TaskRecord) -> bool:
+        """事件落盘节流：最多每 2 秒写一次"""
+        now = time.time()
+        if now - record._last_persist_at < 2.0:
+            return False
+        record._last_persist_at = now
+        return True
 
     def _advance_progress(self, record: TaskRecord, etype: str, content: str) -> None:
         if record.status != "running":
@@ -383,6 +520,7 @@ class TaskManager:
         record.error = message
         record.message = message
         self._emit(record, "error", message)
+        self._persist(record)
 
     def _close_queue(self, record: TaskRecord) -> None:
         try:

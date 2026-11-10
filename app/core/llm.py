@@ -22,23 +22,31 @@ from app.utils.logger import logger
 
 
 def normalize_base_url(base_url: Optional[str]) -> Optional[str]:
-    """规范化接口地址，自动补齐缺失的 /v1 后缀。
+    """规范化接口地址：去掉末尾斜杠，保留用户填写的原样路径。
 
-    很多人填写 base_url 时会漏掉 /v1，导致 404 Not Found。
-    这里做一次容错：地址非空且末段不是版本号时补上 /v1。
-    已带 /v1 或以其他版本号结尾的保持原样。
+    这里**不**自动补 /v1 —— 自定义代理可能用 /api/openai 这类非标准路径，
+    盲目补全会把地址改错。缺 /v1 的情况由 404 时的自动重试来兜底
+    （见 LLM._create_with_v1_fallback）。
+    """
+    if not base_url:
+        return None
+    url = base_url.strip().rstrip("/")
+    return url or None
+
+
+def with_v1_suffix(base_url: Optional[str]) -> Optional[str]:
+    """在地址末尾补上 /v1（若尚未是版本号结尾）。
+
+    用于 404 时的自动重试：先按用户填的地址试一次，
+    404 说明多半漏了 /v1，这时再试一次补全后的地址。
     """
     if not base_url:
         return base_url
-    url = base_url.strip().rstrip("/")
-    if not url:
-        return url
-
-    # 末段若是版本号（v1/v2/...）或已是完整接口路径，则不再追加
+    url = base_url.rstrip("/")
     last = url.rsplit("/", 1)[-1].lower()
+    # 末段已是版本号，或已是完整接口路径 → 不追加
     if last.startswith("v") and last[1:].isdigit():
         return url
-    # 有些服务用 /chat/completions 这样的完整路径，也不追加
     if last in ("chat", "completions", "chat/completions"):
         return url
     return f"{url}/v1"
@@ -46,7 +54,7 @@ def normalize_base_url(base_url: Optional[str]) -> Optional[str]:
 
 class LLM:
     """LLM 调用类"""
-    
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -57,10 +65,13 @@ class LLM:
     ):
         self.api_key = api_key or settings.LLM_API_KEY
         self.model = model or settings.LLM_MODEL
+        # 保留用户填写的地址原样，不预补 /v1
         self.base_url = normalize_base_url(base_url or settings.LLM_BASE_URL)
         # 调用失败时的回调（用于把错误推送到前端终端）
         self.on_error = on_error
-        
+        # 是否已经尝试过补 /v1 的地址（避免重复尝试）
+        self._tried_v1_fallback = False
+
         # 初始化OpenAI客户端，设置超时
         # max_retries=0：SDK 内层不再重试，由 chat() 统一控制重试次数，
         # 否则两层重试叠加会让失败反馈非常迟缓。
@@ -70,10 +81,16 @@ class LLM:
             timeout=httpx.Timeout(timeout, connect=60.0),  # 连接超时60秒，总超时5分钟
             max_retries=0,
         )
-        
+
         logger.info(
             f"LLM初始化: model={self.model}, base_url={self.base_url}, timeout={timeout}s"
         )
+
+    def _switch_base_url(self, new_url: str) -> None:
+        """切换接口地址（404 时改用补了 /v1 的地址重试）"""
+        self.base_url = new_url
+        self.client.base_url = new_url
+        logger.info(f"LLM 切换接口地址为: {new_url}")
 
     async def chat(
         self,
@@ -117,6 +134,12 @@ class LLM:
                 response = await self.client.chat.completions.create(**kwargs)
                 return response
             except Exception as e:
+                # 404 且还没试过补 /v1 → 换个地址立刻再试一次
+                if self._is_not_found(e) and not self._tried_v1_fallback:
+                    recovered = await self._retry_with_v1(kwargs)
+                    if recovered is not None:
+                        return recovered
+
                 detail = self._describe_error(e)
                 is_last = attempt >= max_retries - 1
                 logger.error(f"LLM调用失败 (尝试 {attempt + 1}): {detail}")
@@ -129,15 +152,47 @@ class LLM:
                 else:
                     raise
 
+    @staticmethod
+    def _is_not_found(exc: Exception) -> bool:
+        """判断是否为 404 Not Found"""
+        status = getattr(exc, "status_code", None)
+        if status == 404:
+            return True
+        text = str(exc).lower()
+        return "404" in text or "not found" in text
+
+    async def _retry_with_v1(self, kwargs: Dict[str, Any]) -> Optional[Any]:
+        """404 时改用补了 /v1 的地址重试一次。
+
+        返回响应对象表示新地址可用、调用成功；
+        返回 None 表示新地址也不行，调用方继续走常规重试与错误提示。
+        """
+        alt = with_v1_suffix(self.base_url)
+        if not alt or alt == self.base_url:
+            # 地址本来就以版本号结尾，补 /v1 没意义
+            return None
+
+        self._tried_v1_fallback = True
+        logger.info(f"接口返回 404，尝试补全地址: {alt}")
+        self._switch_base_url(alt)
+        try:
+            return await self.client.chat.completions.create(**kwargs)
+        except Exception as e:  # noqa: BLE001
+            # 补了 /v1 仍失败 → 保留新地址，让上层按原错误提示用户
+            logger.warning(f"补全地址后仍失败: {e}")
+            return None
+
     def _describe_error(self, exc: Exception) -> str:
         """把异常转成对用户友好的说明"""
         name = type(exc).__name__
         msg = str(exc).strip()
         low = msg.lower()
 
-        # 404 常见于 base_url 漏了 /v1
-        if "404" in low or "not found" in low:
-            hint = "（请检查接口地址 base_url 是否需要 /v1 后缀）"
+        if self._is_not_found(exc):
+            if self._tried_v1_fallback:
+                hint = "（已自动尝试补 /v1 仍失败，请手动确认接口地址）"
+            else:
+                hint = "（请检查接口地址 base_url 是否需要 /v1 后缀）"
         elif "401" in low or "unauthorized" in low:
             hint = "（API Key 无效或已过期）"
         elif "429" in low:

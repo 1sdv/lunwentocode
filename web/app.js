@@ -211,14 +211,14 @@
 
   // ------------------------------------------------------------ 提交
 
-  /** 规范化接口地址：自动补齐缺失的 /v1（与后端逻辑一致） */
+  /** 规范化接口地址：去掉末尾斜杠，保留用户填写的原样路径。
+
+    不自动补 /v1 —— 自定义代理可能用非标准路径。
+    漏填 /v1 时后端会在收到 404 后自动补全重试。
+  */
   function normalizeBaseUrl(url) {
     const u = (url || '').trim().replace(/\/+$/, '');
-    if (!u) return '';
-    const last = u.split('/').pop().toLowerCase();
-    if (/^v\d+$/.test(last)) return u;
-    if (last === 'chat' || last === 'completions') return u;
-    return u + '/v1';
+    return u;
   }
 
   $('#form').addEventListener('submit', async (e) => {
@@ -396,6 +396,7 @@
     setProgress(0);
     setConn('', '未连接任务');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    loadHistory();
   });
 
   function startTask(taskId) {
@@ -410,6 +411,95 @@
     setProgress(0);
     setConn('live', '任务运行中');
     connect(taskId);
+    loadHistory();
+  }
+
+  // ------------------------------------------------------------ 历史任务
+
+  const STATE_TEXT = {
+    pending: '排队',
+    running: '运行中',
+    done: '已完成',
+    error: '失败',
+  };
+
+  /** 拉取历史任务列表（包含服务重启前的记录） */
+  async function loadHistory() {
+    const ul = $('#history');
+    if (!ul) return;
+    let data;
+    try {
+      const res = await apiFetch('/api/tasks');
+      if (!res.ok) return;
+      data = await res.json();
+    } catch (e) {
+      return;
+    }
+    const tasks = (data && data.tasks) || [];
+    if (!tasks.length) {
+      $('#history-block').hidden = true;
+      return;
+    }
+    ul.innerHTML = '';
+    tasks.slice(0, 12).forEach((t) => {
+      const li = document.createElement('li');
+      if (t.task_id === state.taskId) li.classList.add('active');
+      const id = document.createElement('span');
+      id.className = 'history-id';
+      id.textContent = t.task_id;
+      const st = document.createElement('span');
+      st.className = 'history-state ' + (t.status || 'pending');
+      st.textContent = STATE_TEXT[t.status] || t.status;
+      li.append(id, st);
+      li.addEventListener('click', () => openHistoryTask(t.task_id));
+      ul.appendChild(li);
+    });
+    $('#history-block').hidden = false;
+  }
+
+  /** 打开一个历史任务：拉取记录并渲染 */
+  async function openHistoryTask(taskId) {
+    if (state.es) {
+      state.es.close();
+      state.es = null;
+    }
+    state.taskId = taskId;
+    state.isDemo = false;
+    $('#log').innerHTML = '';
+    $('#log-block').hidden = false;
+    $('#result-panel').hidden = true;
+    $('#demo-flag').hidden = true;
+    $('#btn-back').hidden = false;
+    $('#run-task-id').textContent = taskId;
+    setConn('live', '载入历史任务');
+    setProgress(0);
+
+    try {
+      const res = await apiFetch('/api/tasks/' + taskId);
+      if (!res.ok) throw new Error('任务不存在或已过期');
+      const d = await res.json();
+
+      (d.events || []).forEach(appendLog);
+      setProgress(d.progress || 0);
+      $('#run-state').textContent = STATE_TEXT[d.status] || d.status;
+
+      if (d.status === 'done' && d.result) {
+        setConn('done', '任务完成');
+        setProgress(100);
+        showResult(d.result);
+      } else if (d.status === 'error') {
+        setConn('error', '任务失败');
+        $('#run-state').textContent = d.error || '执行失败';
+      } else {
+        // 仍在运行 → 继续接 SSE
+        connect(taskId);
+      }
+      loadHistory();
+      $('#result-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (ex) {
+      setConn('error', '载入失败');
+      fail(ex.message || '载入历史任务失败');
+    }
   }
 
   function setProgress(pct) {
@@ -454,6 +544,7 @@
           $('#run-state').textContent = data.error || '执行失败';
           appendLog({ type: 'error', prefix: '✕', content: data.error || '任务失败' });
         }
+        loadHistory();
         return;
       }
 
@@ -822,5 +913,8 @@
         }
       })
       .catch(() => {});
+  } else {
+    // 没有指定任务 → 拉历史列表供查看
+    loadHistory();
   }
 })();
