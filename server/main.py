@@ -347,7 +347,7 @@ async def stream_task(
     )
 
 
-@app.get("/api/tasks/{task_id}/files/{name}")
+@app.get("/api/tasks/{task_id}/files/{name:path}")
 async def get_file(
     task_id: str,
     name: str,
@@ -407,7 +407,7 @@ async def get_demo_timeline(x_access_token: Optional[str] = Header(None)):
     return {"timeline": build_timeline()}
 
 
-@app.get("/api/demo/files/{name}")
+@app.get("/api/demo/files/{name:path}")
 async def get_demo_file(
     name: str,
     token: Optional[str] = None,

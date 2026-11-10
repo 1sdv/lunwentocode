@@ -540,6 +540,9 @@ input::placeholder { color: #676956; }
   background: rgba(8, 10, 6, .5); border: 1px solid var(--rule);
   padding: 1px 5px; border-radius: 3px; color: var(--accent);
 }
+.guide-list p.guide-tip {
+  color: var(--dim); font-size: 12.5px;
+}
 .tag {
   font-style: normal; font-size: 11px; color: var(--dim);
   border: 1px solid var(--rule); border-radius: 2px; padding: 0 5px;

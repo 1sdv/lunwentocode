@@ -211,6 +211,16 @@
 
   // ------------------------------------------------------------ 提交
 
+  /** 规范化接口地址：自动补齐缺失的 /v1（与后端逻辑一致） */
+  function normalizeBaseUrl(url) {
+    const u = (url || '').trim().replace(/\/+$/, '');
+    if (!u) return '';
+    const last = u.split('/').pop().toLowerCase();
+    if (/^v\d+$/.test(last)) return u;
+    if (last === 'chat' || last === 'completions') return u;
+    return u + '/v1';
+  }
+
   $('#form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = $('#form-error');
@@ -235,7 +245,7 @@
     const fd = new FormData();
     fd.append('proposal', proposal);
     fd.append('api_key', apiKey);
-    fd.append('base_url', $('#base_url').value.trim());
+    fd.append('base_url', normalizeBaseUrl($('#base_url').value));
     fd.append('analyzer_model', $('#analyzer_model').value.trim());
     fd.append('coder_model', $('#coder_model').value.trim());
     fd.append('writer_model', $('#writer_model').value.trim());
@@ -493,7 +503,7 @@
     files.forEach((name) => {
       const li = document.createElement('li');
       const a = document.createElement('a');
-      a.href = base + encodeURIComponent(name) + q;
+      a.href = base + name.split('/').map(encodeURIComponent).join('/') + q;
       a.target = '_blank';
       a.rel = 'noopener';
       const label = document.createElement('span');
@@ -590,7 +600,7 @@
     let inCode = false, codeLang = '', codeBuf = [];
     let inTable = false, tableBuf = [];
 
-    // 论文正文中的图片是裸文件名（如 fig1.png），需指向产出目录
+    // 论文正文中的图片是裸文件名或带子目录的相对路径，需指向产出目录
     // <img> / 下载链接无法自定义请求头，令牌走 ?token= 查询参数
     const assetUrl = (src) => {
       if (!src) return '';
@@ -600,7 +610,8 @@
       const base = state.isDemo
         ? '/api/demo/files/'
         : '/api/tasks/' + state.taskId + '/files/';
-      return base + encodeURIComponent(src) + tokenQuery();
+      // 保留路径分隔符，只编码各段，否则子目录图片会 404
+      return base + src.split('/').map(encodeURIComponent).join('/') + tokenQuery();
     };
 
     /** 令牌查询参数（仅在站点启用令牌时附加） */

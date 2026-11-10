@@ -64,6 +64,32 @@ EVENT_PREFIX = {
     "error": "✕",
 }
 
+# 打包时跳过这些：Python 缓存与临时文件，对交付无意义
+_ZIP_EXCLUDE_DIRS = {"__pycache__", ".ipynb_checkpoints", ".git"}
+_ZIP_EXCLUDE_SUFFIX = (".pyc", ".pyo", ".tmp")
+
+
+def _make_project_zip(archive_base: Path, work_dir: Path) -> Path:
+    """把产出目录打包成 zip（跳过缓存文件），返回 zip 路径"""
+    import zipfile
+
+    zip_path = Path(f"{archive_base}.zip")
+    tmp_path = Path(f"{archive_base}.tmp.zip")
+    with zipfile.ZipFile(
+        tmp_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6
+    ) as zf:
+        for path in sorted(work_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(work_dir)
+            if any(part in _ZIP_EXCLUDE_DIRS for part in rel.parts):
+                continue
+            if path.suffix in _ZIP_EXCLUDE_SUFFIX:
+                continue
+            zf.write(path, arcname=str(rel))
+    tmp_path.replace(zip_path)
+    return zip_path
+
 
 class TaskManager:
     """全局任务管理器（进程内单例）"""
@@ -186,7 +212,7 @@ class TaskManager:
                 self._emit(record, "system", "任务完成")
             except Exception as exc:  # noqa: BLE001
                 logger.exception(f"[{record.task_id}] 任务失败")
-                self._finish_error(record, f"{type(exc).__name__}: {exc}")
+                self._finish_error(record, self._error_text(exc))
             finally:
                 loop.close()
         finally:
@@ -223,6 +249,7 @@ class TaskManager:
                 if src.exists():
                     shutil.copy2(src, data_dir / src.name)
 
+        # LLM 失败回调由工作流统一绑定（错误会推送到事件总线，前端终端可见）
         analyzer_llm = LLM(
             api_key=api_key,
             model=analyzer_model or web_settings.DEFAULT_ANALYZER_MODEL,
@@ -251,9 +278,13 @@ class TaskManager:
             output_dir=str(work_dir),
         )
 
-        # 打包整个任务目录供下载
+        # 工作流会在 output_dir 下再建一层以自身 task_id 命名的目录，
+        # 真正的产物（paper.md / 图表 / 代码）都在那一层里。
+        real_work_dir = self._resolve_work_dir(work_dir)
+
+        # 打包整个产出目录供下载（压缩包内为扁平结构，跳过缓存与临时文件）
         archive_base = task_root / "project"
-        zip_path = shutil.make_archive(str(archive_base), "zip", str(work_dir))
+        zip_path = _make_project_zip(archive_base, real_work_dir)
 
         success = sum(1 for r in result.task_results if r.success)
         total = len(result.task_results)
@@ -271,8 +302,26 @@ class TaskManager:
             "readme": result.readme,
             "zip_name": Path(zip_path).name,
             "zip_size": Path(zip_path).stat().st_size,
-            "files": sorted(p.name for p in Path(work_dir).iterdir() if p.is_file()),
+            "files": sorted(p.name for p in real_work_dir.iterdir() if p.is_file()),
         }
+
+    @staticmethod
+    def _resolve_work_dir(work_dir: Path) -> Path:
+        """定位真正的产物目录。
+
+        工作流输出结构为 <base>/<workflow_task_id>/，产物都在其中；
+        若未来结构变扁平，则直接返回 base。
+        """
+        if not work_dir.exists():
+            return work_dir
+        # 已有文件 → 扁平结构，直接用
+        if any(p.is_file() for p in work_dir.iterdir()):
+            return work_dir
+        # 否则找唯一的一级子目录
+        subdirs = [p for p in work_dir.iterdir() if p.is_dir()]
+        if len(subdirs) == 1:
+            return subdirs[0]
+        return work_dir
 
     # ---------------------------------------------------------------- 事件
 
@@ -318,6 +367,17 @@ class TaskManager:
             record.progress = max(record.progress, min(94, record.progress + 3))
         record.message = content.split("\n")[0][:200]
 
+    @staticmethod
+    def _error_text(exc: Exception) -> str:
+        """生成面向用户的错误文案
+
+        RuntimeError 的内容本身已经是可读的中文提示，
+        不再重复拼接异常类名。
+        """
+        if isinstance(exc, RuntimeError):
+            return str(exc)
+        return f"{type(exc).__name__}: {exc}"
+
     def _finish_error(self, record: TaskRecord, message: str) -> None:
         record.status = "error"
         record.error = message
@@ -357,8 +417,11 @@ class TaskManager:
         return removed
 
     def get_work_dir(self, task_id: str) -> Optional[Path]:
-        path = Path(web_settings.OUTPUT_ROOT) / task_id / "project"
-        return path if path.exists() else None
+        """任务产物目录（兼容工作流自身再嵌套一层的情况）"""
+        base = Path(web_settings.OUTPUT_ROOT) / task_id / "project"
+        if not base.exists():
+            return None
+        return self._resolve_work_dir(base)
 
 
 task_manager = TaskManager()

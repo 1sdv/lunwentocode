@@ -11,6 +11,7 @@
 import json
 import os
 import shutil
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -76,6 +77,16 @@ class ThesisToCodeWorkflow:
         self.work_dir: str = ""
         # 研究方案原文（供写作手撰写各章节时引用素材）
         self._source_markdown: str = ""
+        # 记录最近一次 LLM 错误，任务失败时优先抛出它，
+        # 避免被「未生成支撑任务」这类二次错误掩盖真正原因
+        self._last_llm_error: str = ""
+        self._last_llm_error_at: float = 0.0
+
+    def _on_llm_error(self, message: str) -> None:
+        """LLM 调用失败：记录并推送到事件总线（前端终端可见）"""
+        self._last_llm_error = message
+        self._last_llm_error_at = time.time()
+        self._publish(EVENT_ERROR, message)
 
     # ------------------------------------------------------------------ 主流程
 
@@ -87,6 +98,7 @@ class ThesisToCodeWorkflow:
     ) -> ProjectOutput:
         self.task_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
         self._publish(EVENT_SYSTEM, f"开始任务: {self.task_id}")
+        self.bind_llm_error_hooks()
 
         base_output = output_dir or settings.OUTPUT_DIR
         self.work_dir = create_work_dir(self.task_id, base_output)
@@ -223,6 +235,12 @@ class ThesisToCodeWorkflow:
 
         except Exception as e:
             logger.error(f"工作流执行失败: {e}")
+            # LLM 调用失败是最常见的原因，优先抛出它，
+            # 避免被「未生成支撑任务」等二次错误掩盖。
+            # 只在近期发生过 LLM 错误时才采用，避免误报陈旧错误。
+            recent = (time.time() - self._last_llm_error_at) < 120
+            if self._last_llm_error and recent:
+                raise RuntimeError(self._last_llm_error) from e
             raise
         finally:
             if code_interpreter:
@@ -553,3 +571,8 @@ jupyter notebook notebook.ipynb
     def _publish(self, event_type: str, content: str) -> None:
         logger.info(content)
         self.event_bus.publish(event_type, content)
+
+    def bind_llm_error_hooks(self) -> None:
+        """让三个 LLM 实例的失败回调指向本工作流，统一记录与推送"""
+        for llm in (self.analyzer_llm, self.coder_llm, self.writer_llm):
+            llm.on_error = self._on_llm_error

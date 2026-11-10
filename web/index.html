@@ -88,6 +88,7 @@
               <div class="col">
                 <label for="base_url">Base URL <span class="mark-optional">可选</span></label>
                 <input type="text" id="base_url" name="base_url" placeholder="https://api.openai.com/v1">
+                <p class="field-note">漏填 <code>/v1</code> 也没关系，系统会自动补全</p>
               </div>
               <div class="row row-3">
                 <div class="col">
@@ -210,6 +211,7 @@
       <li>
         <b>Base URL</b><em class="tag">可选</em>
         <p>自定义或代理接口地址，如 <code>https://api.openai.com/v1</code>。留空则用官方地址。</p>
+        <p class="guide-tip">漏填 <code>/v1</code> 也没关系，系统会自动补全；调用失败时终端会给出具体原因。</p>
       </li>
       <li>
         <b>模型名</b><em class="tag">可选</em>
