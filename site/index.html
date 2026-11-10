@@ -133,16 +133,74 @@ h1 {
 /* 输入 → 产出 */
 .transit {
   margin-top: 34px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
-  display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center;
+  display: grid; grid-template-columns: auto 1fr auto 1fr auto; align-items: stretch;
   gap: 0 14px; font-family: var(--sans); font-size: 13.5px;
 }
-.transit .slot { padding: 14px 0; }
+.transit .slot { padding: 14px 0; display: flex; flex-direction: column; justify-content: center; }
 .transit .slot b { display: block; font-family: var(--serif); font-size: 16px; font-weight: 700; }
 .transit .slot span { color: var(--muted); }
-.transit .link { height: 1px; background: var(--rule); position: relative; }
+.transit .slot .ico {
+  width: 26px; height: 26px; display: grid; place-items: center;
+  color: var(--amber); border: 1px solid var(--rule); border-radius: 3px;
+  background: rgba(20, 23, 15, .7); margin-bottom: 9px;
+}
+.transit .slot .ico svg { width: 13px; height: 13px; display: block; }
+.transit .slot-mid .ico {
+  border-color: rgba(217, 180, 74, .45);
+  background: rgba(217, 180, 74, .08);
+}
+
+/* 连接线：两侧光带从中枢向外流动 */
+.transit .link {
+  height: 1px; background: var(--rule);
+  position: relative; align-self: center;
+}
+.transit .link .flow {
+  position: absolute; top: -1.5px; left: 0;
+  width: 34px; height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--amber) 70%, var(--amber) 100%);
+  box-shadow: 0 0 10px rgba(217, 180, 74, .55);
+  opacity: 0;
+}
 .transit .link::after {
-  content: ""; position: absolute; right: 0; top: -2.5px;
-  border-left: 6px solid var(--amber); border-top: 3px solid transparent; border-bottom: 3px solid transparent;
+  content: ""; position: absolute; top: -2.5px;
+  border-top: 3px solid transparent; border-bottom: 3px solid transparent;
+}
+.transit .link-in { background: transparent; }
+.transit .link-in::before {
+  content: ""; position: absolute; top: 0; left: -26px; right: 0;
+  height: 1px; background: var(--rule);
+}
+.transit .link-in .flow { animation: flow-right 1.8s cubic-bezier(.45, 0, .55, 1) infinite; }
+.transit .link-in::after { right: 0; border-left: 6px solid var(--amber); animation: transit-pulse 1.8s ease-in-out infinite; }
+.transit .link-out .flow {
+  animation: flow-left 1.8s cubic-bezier(.45, 0, .55, 1) infinite;
+  background: linear-gradient(270deg, transparent 0%, var(--amber) 70%, var(--amber) 100%);
+}
+.transit .link-out::after { left: -35px; border-right: 6px solid var(--amber); animation: transit-pulse 1.8s ease-in-out infinite; }
+/* 左侧底线：去掉元素自带的底线，改由 ::before 单条绘制
+   左端 -35px 接箭头，右端留出 16px 与「研究方案」保持间距 */
+.transit .link-out { background: transparent; }
+.transit .link-out::before {
+  content: ""; position: absolute; top: 0; left: -35px; right: 26px;
+  height: 1px; background: var(--rule);
+}
+
+@keyframes flow-right {
+  0%   { left: -34px; opacity: 0; }
+  14%  { opacity: 1; }
+  86%  { opacity: 1; }
+  100% { left: calc(100% - 34px); opacity: 0; }
+}
+@keyframes flow-left {
+  0%   { left: calc(100% - 44px); opacity: 0; }
+  14%  { opacity: 1; }
+  86%  { opacity: 1; }
+  100% { left: -34px; opacity: 0; }
+}
+@keyframes transit-pulse {
+  0%, 100% { opacity: .4; }
+  50% { opacity: 1; }
 }
 
 .hero-links {
@@ -162,18 +220,12 @@ h1 {
   transition: border-color var(--motion) ease, background var(--motion) ease,
               transform var(--motion) ease, box-shadow var(--motion) ease;
 }
-.hero-links a::after {
-  content: "→"; position: absolute; right: 14px; top: 13px;
-  font-family: var(--sans); font-size: 13px; color: var(--muted);
-  transition: color var(--motion) ease, transform var(--motion) ease;
-}
 .hero-links a:hover {
   border-color: var(--amber);
   background: rgba(217, 180, 74, .09);
   transform: translateY(-2px);
   box-shadow: 0 12px 26px -18px rgba(217, 180, 74, .85);
 }
-.hero-links a:hover::after { color: var(--amber); transform: translateX(3px); }
 .hero-links a.quiet:hover {
   border-color: var(--border);
   background: rgba(217, 180, 74, .06);
@@ -492,6 +544,7 @@ footer .seal-note { color: #75775c; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
+  .transit .link .flow { display: none; }
 }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
 </style>
@@ -526,10 +579,42 @@ footer .seal-note { color: #75775c; }
       </p>
 
       <div class="transit">
-        <div class="slot"><b>研究方案</b><span>Markdown 或 PDF</span></div>
-        <div class="link"></div>
-        <div class="slot"><b>paper.md</b><span>论文初稿正文</span></div>
-        <div class="link"></div>
+        <div class="slot">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18l-5-6 5-6M15 6l5 6-5 6"></path>
+            </svg>
+          </span>
+          <b>验证代码</b>
+          <span>notebook.ipynb</span>
+        </div>
+        <div class="link link-out" aria-hidden="true">
+          <span class="flow"></span>
+        </div>
+        <div class="slot slot-mid">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path>
+              <path d="M14 3v5h5"></path>
+              <path d="M9 20v-4l7-7 3 3-7 7-4 1z"></path>
+            </svg>
+          </span>
+          <b>研究方案</b>
+          <span>Markdown 或 PDF</span>
+        </div>
+        <div class="link link-in" aria-hidden="true">
+          <span class="flow"></span>
+        </div>
+        <div class="slot">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+          </span>
+          <b>论文初稿</b>
+          <span>paper.md 正文</span>
+        </div>
       </div>
 
       <div class="hero-links">
@@ -627,34 +712,34 @@ footer .seal-note { color: #75775c; }
     <li>
       <span class="no">一</span>
       <div>
-        <h3>方案解析</h3>
+      <h3>方案解析</h3>
         <p class="agent-name">ParserAgent</p>
         <p class="body">读取 Markdown 或 PDF 研究方案，提取标题、章节结构与关键词；未提供标题时，自动拟定一个规范的学术标题。</p>
-      </div>
+    </div>
     </li>
     <li>
       <span class="no">二</span>
       <div>
-        <h3>任务拆解</h3>
+      <h3>任务拆解</h3>
         <p class="agent-name">AnalyzerAgent</p>
         <p class="body">按论文章节组织 5 至 9 个代码支撑任务，涵盖模型实现、算法求解、仿真实验与图表生成，每个任务对应论文的一章。</p>
-      </div>
+    </div>
     </li>
     <li>
       <span class="no">三</span>
       <div>
-        <h3>真实执行</h3>
+      <h3>真实执行</h3>
         <p class="agent-name">CoderAgent</p>
         <p class="body">通过 Function Calling 在持久 Jupyter 内核中编写并执行代码，出错自动反思重试，变量跨任务保留，无需重复装载数据。</p>
-      </div>
+    </div>
     </li>
     <li>
       <span class="no">四</span>
       <div>
-        <h3>论文撰写</h3>
+      <h3>论文撰写</h3>
         <p class="agent-name">WriterAgent</p>
         <p class="body">以第一作者口吻撰写各章节：模型部分基于方案素材润色，实验数值严格取自代码真实输出，图表强制插入并逐图解读。</p>
-      </div>
+    </div>
     </li>
   </ol>
 </section>
@@ -737,22 +822,22 @@ footer .seal-note { color: #75775c; }
         </div>
       </li>
       <li>
-        <div>
+      <div>
           <h3>生成论文初稿</h3>
           <p>命令行传入方案文件，指定输出目录。</p>
-        </div>
+      </div>
       </li>
       <li>
         <div>
           <h3>或启动浏览器界面</h3>
           <p>上传方案文件，实时查看多 Agent 执行进度与日志。</p>
-        </div>
+    </div>
       </li>
       <li>
-        <div>
+      <div>
           <h3>查看产出</h3>
           <p>输出目录里是 paper.md、notebook.ipynb、图表与依赖清单。</p>
-        </div>
+      </div>
       </li>
     </ol>
 
@@ -771,7 +856,7 @@ footer .seal-note { color: #75775c; }
       <div><span class="ok">✓ output/paper.md　62,049 字</span></div>
       <div><span class="ok">✓ output/notebook.ipynb　101 个代码单元</span></div>
     </div>
-  </div>
+      </div>
 
   <div class="repo">
     <div class="repo-mark" aria-hidden="true">
